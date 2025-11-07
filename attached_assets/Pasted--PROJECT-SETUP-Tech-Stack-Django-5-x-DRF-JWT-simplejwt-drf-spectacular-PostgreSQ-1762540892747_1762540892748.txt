@@ -1,0 +1,330 @@
+## PROJECT SETUP
+
+**Tech Stack:** Django 5.x + DRF + JWT (simplejwt) + drf-spectacular + PostgreSQL  
+**Environment:** Windows local with .env file  
+**Apps:** accounts, tenants, billing
+
+**Structure:**
+```
+superadmin/
+├── config/ (settings, urls)
+├── apps/
+│   ├── accounts/ (users, auth, roles)
+│   ├── tenants/ (organizations)
+│   └── billing/ (plans, subscriptions)
+├── common/ (utils, constants, permissions)
+└── .env
+```
+
+---
+
+## MODELS
+
+### accounts/models.py
+
+**CustomUser** (extends AbstractUser):
+- `id` = UUIDField(primary_key)
+- `email` = EmailField(unique, USERNAME_FIELD)
+- `phone` = CharField(optional, unique)
+- `tenant` = ForeignKey(Tenant, null=True)
+- `roles` = ManyToManyField(Role) ⚡ NEW - user can have multiple roles
+- `is_super_admin` = BooleanField (for platform admin)
+- `profile_picture` = URLField(optional)
+- `timezone` = CharField(default='Asia/Kolkata')
+- Remove username field, use email login
+
+**Role** ⚡ NEW - Dynamic role system:
+- `id` = UUIDField(primary_key)
+- `tenant` = ForeignKey(Tenant)
+- `name` = CharField (e.g., "Sales Executive", "Team Lead")
+- `description` = TextField
+- `permissions` = JSONField - Structure:
+  ```json
+  {
+    "crm": {
+      "leads": {"view": "team", "create": true, "edit": "own", "delete": false},
+      "activities": {"view": "all", "create": true}
+    },
+    "whatsapp": {
+      "messages": {"send": true, "view": true}
+    },
+    "meetings": {
+      "meetings": {"view": "own", "create": true, "edit": "own"}
+    }
+  }
+  ```
+- `is_active` = BooleanField
+- `created_by` = ForeignKey(CustomUser)
+- `created_at`, `updated_at`
+
+---
+
+### tenants/models.py
+
+**Tenant**:
+- `id` = UUIDField(primary_key)
+- `name`, `slug` (unique), `domain` (optional)
+- `database_name`, `database_url` (Neon connection - manual for now)
+- `enabled_modules` = JSONField (["crm", "whatsapp", "meetings"])
+- `settings` = JSONField (tenant config)
+- `is_active`, `trial_ends_at`
+- `subscription` = ForeignKey(SubscriptionPlan, null=True)
+- `created_at`, `updated_at`
+
+---
+
+### billing/models.py
+
+**SubscriptionPlan**:
+- `id`, `name`, `slug`
+- `price_monthly`, `price_yearly`, `currency` (default=INR)
+- `max_users`, `max_leads`, `storage_gb` (null=unlimited)
+- `included_modules` = JSONField
+- `features` = JSONField (list of strings)
+- `is_trial`, `trial_days`, `is_active`, `sort_order`
+
+**Subscription**:
+- `tenant` (FK), `plan` (FK)
+- `status` (TRIAL/ACTIVE/PAST_DUE/CANCELLED/EXPIRED)
+- `billing_cycle` (MONTHLY/YEARLY)
+- `current_period_start`, `current_period_end`
+- `cancel_at_period_end`, `cancelled_at`
+
+**Invoice** (basic):
+- `tenant`, `subscription`, `invoice_number` (auto)
+- `amount`, `currency`, `status` (PENDING/PAID/FAILED)
+- `due_date`, `paid_at`, `invoice_url`
+
+---
+
+## PERMISSION SCHEMA (common/constants.py)
+
+Define available permissions structure:
+```python
+PERMISSION_SCHEMA = {
+    "crm": {
+        "label": "CRM",
+        "resources": {
+            "leads": {
+                "label": "Leads",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "activities": {"label": "Activities", "actions": {...}},
+            "payments": {"label": "Payments", "actions": {...}}
+        }
+    },
+    "whatsapp": {
+        "label": "WhatsApp",
+        "resources": {
+            "messages": {"label": "Messages", "actions": {"send": {"type": "boolean"}, "view": {"type": "boolean"}}},
+            "templates": {"label": "Templates", "actions": {...}}
+        }
+    },
+    "meetings": {...},
+    "tasks": {...}
+}
+```
+
+---
+
+## JWT CONFIGURATION
+
+**Access Token Payload:**
+```json
+{
+  "user_id": "uuid",
+  "email": "user@example.com",
+  "tenant_id": "uuid",
+  "tenant_slug": "acme-corp",
+  "is_super_admin": false,
+  "permissions": {
+    "crm.leads.view": "team",
+    "crm.leads.create": true,
+    "crm.leads.edit": "own",
+    "whatsapp.messages.send": true
+  },
+  "enabled_modules": ["crm", "whatsapp", "meetings"],
+  "database_url": "tenant_db_reference",
+  "exp": 1234567890
+}
+```
+
+**Settings:**
+- Access: 1 hour, Refresh: 7 days
+- Token rotation enabled, Blacklist enabled
+- Flatten permissions for fast lookup
+
+**Custom Token Claims Service:**
+Generate token with user's merged permissions from all roles.
+
+---
+
+## API ENDPOINTS
+
+### Auth (accounts/)
+- `POST /api/auth/register/` - Register tenant + admin user
+- `POST /api/auth/login/` - Login, return JWT
+- `POST /api/auth/logout/` - Blacklist token
+- `POST /api/auth/token/refresh/`
+- `POST /api/auth/token/verify/`
+- `POST /api/auth/password/change/`
+- `POST /api/auth/password/reset/request/`
+- `POST /api/auth/password/reset/confirm/`
+
+### Users (accounts/)
+- `GET /api/users/me/` - Current user + roles
+- `PUT /api/users/me/`
+- `GET /api/users/` - List tenant users (tenant admin)
+- `POST /api/users/` - Create user (tenant admin)
+- `GET /api/users/{id}/`
+- `PUT /api/users/{id}/`
+- `DELETE /api/users/{id}/`
+
+### Roles ⚡ NEW (accounts/)
+- `GET /api/roles/` - List tenant roles
+- `POST /api/roles/` - Create role (tenant admin)
+- `GET /api/roles/{id}/`
+- `PUT /api/roles/{id}/`
+- `DELETE /api/roles/{id}/`
+- `GET /api/roles/{id}/members/` - Users with role
+- `GET /api/roles/permissions/schema/` - Return PERMISSION_SCHEMA for UI
+- `POST /api/users/{id}/roles/` - Assign role to user
+- `DELETE /api/users/{id}/roles/{role_id}/` - Remove role
+
+### Tenants (tenants/)
+- `GET /api/tenants/` - All tenants (super admin)
+- `POST /api/tenants/` - Create (super admin)
+- `GET /api/tenants/me/` - Current tenant
+- `PUT /api/tenants/me/` - Update (tenant admin)
+- `GET /api/tenants/{id}/` - Details (super admin)
+- `PUT /api/tenants/{id}/`
+- `DELETE /api/tenants/{id}/`
+
+### Billing (billing/)
+- `GET /api/plans/` - List plans (public)
+- `GET /api/plans/{id}/`
+- `GET /api/subscriptions/my/`
+- `POST /api/subscriptions/subscribe/` - Subscribe (tenant admin)
+- `POST /api/subscriptions/cancel/`
+- `GET /api/subscriptions/invoices/`
+- `GET /api/subscriptions/invoices/{id}/`
+
+---
+
+## PERMISSION UTILITIES (common/permissions.py)
+
+Create helper functions:
+```python
+def flatten_permissions(role_permissions_json):
+    """Convert nested JSON to flat dict: {"crm.leads.view": "team"}"""
+
+def merge_role_permissions(user_roles):
+    """Merge permissions from multiple roles (highest scope wins)"""
+
+def has_permission(user_permissions, permission_string, resource_id=None):
+    """Check permission: has_permission(user.permissions, "crm.leads.edit", lead_id)"""
+```
+
+---
+
+## DJANGO ADMIN
+
+Customize for:
+- **CustomUser**: Show roles, filter by tenant, search by email
+- **Role**: Show permissions JSON (formatted), filter by tenant
+- **Tenant**: Show modules, test DB connection, inline users
+- **SubscriptionPlan**: Order by sort_order
+- **Subscription**: Show status, period end
+- **Invoice**: Mark as paid action
+
+---
+
+## .ENV VARIABLES
+
+```env
+SECRET_KEY=django-secret
+DEBUG=True
+DATABASE_URL=postgresql://postgres:password@localhost:5432/superadmin_db
+JWT_SECRET_KEY=jwt-secret
+JWT_ACCESS_TOKEN_LIFETIME_MINUTES=60
+JWT_REFRESH_TOKEN_LIFETIME_DAYS=7
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+ALLOWED_HOSTS=localhost,127.0.0.1
+```
+
+---
+
+## SETUP COMMANDS
+
+```bash
+django-admin startproject config .
+python manage.py startapp accounts
+python manage.py startapp tenants
+python manage.py startapp billing
+
+pip install djangorestframework djangorestframework-simplejwt drf-spectacular python-decouple psycopg2-binary django-cors-headers django-filter
+
+# Move apps to apps/ folder
+# Create .env from .env.example
+# Update settings.py
+# Run migrations
+# Create superuser
+python manage.py runserver
+```
+
+---
+
+## GENERATE
+
+**Complete production-ready code for:**
+1. settings.py (JWT, CORS, DRF, database config)
+2. All models with proper relationships
+3. Serializers with validation
+4. ViewSets with permission checks
+5. URL routing
+6. Custom JWT token generation service (with flattened permissions)
+7. Permission utility functions
+8. Admin customization
+9. .env.example
+10. README.md with setup
+11. Basic tests for auth + role CRUD
+
+**Swagger docs at /api/docs/**
+
+---
+
+## KEY DIFFERENCES FROM FIXED ROLES
+
+❌ NO fixed role enum (SALES_REP, SALES_MANAGER)  
+✅ Dynamic Role model with JSON permissions  
+✅ User has ManyToMany relationship with Role  
+✅ JWT contains flattened permissions from all roles  
+✅ Permission schema API for frontend UI builder  
+✅ Role CRUD APIs for tenant admins  
+✅ Permission merge logic for multi-role users  
+
+---
+
+## SUCCESS CRITERIA
+
+✅ Register tenant → auto-creates "Admin" role with full permissions  
+✅ Tenant admin can create custom roles via API  
+✅ Assign multiple roles to user  
+✅ JWT includes merged permissions  
+✅ Frontend can fetch schema to build permission editor UI  
+✅ Super admin can manage all tenants  
+✅ Swagger docs work  
+
+---
+
+START GENERATING CODE NOW. Focus on the dynamic role system with JSON permissions.
