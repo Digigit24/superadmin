@@ -1,3 +1,5 @@
+# apps/common/constants.py
+
 PERMISSION_SCHEMA = {
     "crm": {
         "label": "CRM",

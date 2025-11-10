@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -64,14 +65,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('PGDATABASE', default='postgres'),
-        'USER': config('PGUSER', default='postgres'),
-        'PASSWORD': config('PGPASSWORD', default='postgres'),
-        'HOST': config('PGHOST', default='localhost'),
-        'PORT': config('PGPORT', default='5432'),
-    }
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 AUTH_PASSWORD_VALIDATORS = [

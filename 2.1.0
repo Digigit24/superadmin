@@ -1,0 +1,9 @@
+Collecting dj-database-url
+  Using cached dj_database_url-3.0.1-py3-none-any.whl.metadata (14 kB)
+Requirement already satisfied: Django>=4.2 in c:\users\vaibhav\downloads\djangodrfrest\djangodrfrest\venv\lib\site-packages (from dj-database-url) (5.0.14)
+Requirement already satisfied: asgiref<4,>=3.7.0 in c:\users\vaibhav\downloads\djangodrfrest\djangodrfrest\venv\lib\site-packages (from Django>=4.2->dj-database-url) (3.10.0)
+Requirement already satisfied: sqlparse>=0.3.1 in c:\users\vaibhav\downloads\djangodrfrest\djangodrfrest\venv\lib\site-packages (from Django>=4.2->dj-database-url) (0.5.3)
+Requirement already satisfied: tzdata in c:\users\vaibhav\downloads\djangodrfrest\djangodrfrest\venv\lib\site-packages (from Django>=4.2->dj-database-url) (2025.2)
+Using cached dj_database_url-3.0.1-py3-none-any.whl (8.8 kB)
+Installing collected packages: dj-database-url
+Successfully installed dj-database-url-3.0.1
