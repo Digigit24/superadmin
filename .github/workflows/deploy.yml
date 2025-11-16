@@ -40,7 +40,7 @@ jobs:
           if [ -n "${REMOTE_PROJECT_DIR:-}" ]; then
             REMOTE_SCRIPT="/home/ubuntu/src/CRM/superadmin/deploy.sh"
           else
-            REMOTE_SCRIPT="~/deploy.sh"
+            REMOTE_SCRIPT="/home/ubuntu/src/CRM/superadmin/deploy.sh"
           fi
 
           echo "Calling remote script: $REMOTE_SCRIPT"
