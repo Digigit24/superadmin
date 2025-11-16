@@ -143,8 +143,20 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'Multi-Tenant SaaS API',
     'DESCRIPTION': 'Dynamic role-based permission system with JWT authentication',
     'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
+    'SERVE_INCLUDE_SCHEMA': True,  # Enable schema serving for /api/docs/
     'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': '/api/',
+    # Security scheme for JWT authentication in Swagger UI
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'jwtAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            }
+        }
+    },
+    'SECURITY': [{'jwtAuth': []}],
 }
 
 CORS_ALLOWED_ORIGINS = config(

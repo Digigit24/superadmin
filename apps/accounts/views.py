@@ -19,52 +19,153 @@ logger = get_logger(__name__)
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def register_view(request):
+    """
+    Register a new user and return JWT tokens.
+    Enhanced with comprehensive logging for production debugging.
+    """
+    # Log incoming request details (excluding password)
+    request_data_safe = {k: v for k, v in request.data.items() if k not in ['password', 'confirm_password']}
+    logger.info(f'Registration attempt received - Data: {request_data_safe}, IP: {request.META.get("REMOTE_ADDR")}')
+
     serializer = RegisterSerializer(data=request.data)
-    if serializer.is_valid():
+    if not serializer.is_valid():
+        logger.warning(f'Registration validation failed - Errors: {serializer.errors}')
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        logger.debug(f'Creating new user: {serializer.validated_data.get("email")}')
         result = serializer.save()
         user = result['user']
-        logger.info(f'New user registered: {user.email}')
-        tokens = get_tokens_for_user(user)
+
+        tenant_info = f'tenant: {user.tenant.slug}' if user.tenant else 'No tenant'
+        logger.info(f'New user registered successfully: {user.email} (ID: {user.id}), {tenant_info}')
+
+        # Generate tokens
+        try:
+            logger.debug(f'Generating JWT tokens for new user: {user.email}')
+            tokens = get_tokens_for_user(user)
+
+            # Serialize user data
+            try:
+                user_data = UserSerializer(user).data
+                logger.debug(f'User data serialized for: {user.email}')
+            except Exception as ser_error:
+                logger.error(f'Error serializing user data for {user.email}: {str(ser_error)}',
+                           exc_info=True)
+                user_data = {
+                    'id': str(user.id),
+                    'email': user.email,
+                    'is_super_admin': user.is_super_admin
+                }
+
+            logger.info(f'Registration completed successfully for: {user.email}')
+            return Response({
+                'message': 'Registration successful',
+                'user': user_data,
+                'tokens': tokens
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as token_error:
+            logger.error(f'CRITICAL: Token generation failed for new user {user.email}: {str(token_error)}',
+                        exc_info=True)
+            return Response({
+                'error': 'Registration successful but token generation failed',
+                'details': str(token_error) if request.META.get('DEBUG') else 'Please try logging in'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Exception as reg_error:
+        logger.error(f'CRITICAL: Unexpected error during registration: {str(reg_error)}',
+                    exc_info=True)
         return Response({
-            'message': 'Registration successful',
-            'user': UserSerializer(user).data,
-            'tokens': tokens
-        }, status=status.HTTP_201_CREATED)
-    logger.warning(f'Registration failed: {serializer.errors}')
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            'error': 'Registration failed',
+            'details': str(reg_error) if request.META.get('DEBUG') else 'Internal server error'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def login_view(request):
+    """
+    Authenticate user and return JWT tokens.
+    Enhanced with comprehensive logging for production debugging.
+    """
+    # Log incoming request details (excluding password)
+    request_data_safe = {k: v for k, v in request.data.items() if k != 'password'}
+    logger.info(f'Login attempt received - Data: {request_data_safe}, IP: {request.META.get("REMOTE_ADDR")}')
+
     serializer = LoginSerializer(data=request.data)
-    if serializer.is_valid():
-        email = serializer.validated_data['email']
+    if not serializer.is_valid():
+        logger.warning(f'Login validation failed - Errors: {serializer.errors}')
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    email = serializer.validated_data['email']
+    password = serializer.validated_data['password']
+
+    logger.debug(f'Attempting authentication for email: {email}')
+
+    try:
+        # Authenticate user
         user = authenticate(
             request,
             username=email,
-            password=serializer.validated_data['password']
+            password=password
         )
 
-        if user and user.is_active:
-            logger.info(f'User logged in successfully: {user.email}, tenant: {user.tenant.slug if user.tenant else "No tenant"}')
+        # Log authentication result
+        if user is None:
+            logger.warning(f'Authentication failed for email: {email} - User not found or incorrect password')
+            return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Check if user is active
+        if not user.is_active:
+            logger.warning(f'Login attempt for inactive user: {email} (ID: {user.id})')
+            return Response({'error': 'Account is inactive'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Log successful authentication
+        tenant_info = f'tenant: {user.tenant.slug}' if user.tenant else 'No tenant'
+        logger.info(f'User authenticated successfully: {user.email} (ID: {user.id}), {tenant_info}')
+
+        # Generate tokens
+        try:
+            logger.debug(f'Generating JWT tokens for user: {user.email}')
+            tokens = get_tokens_for_user(user)
+            logger.info(f'Login successful for user: {user.email}')
+
+            # Serialize user data
             try:
-                tokens = get_tokens_for_user(user)
-                logger.debug(f'JWT tokens generated for user: {user.email}')
-                return Response({
-                    'message': 'Login successful',
-                    'user': UserSerializer(user).data,
-                    'tokens': tokens
-                })
-            except Exception as e:
-                logger.error(f'Error generating tokens for user {user.email}: {str(e)}', exc_info=True)
-                return Response({'error': 'Token generation failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                user_data = UserSerializer(user).data
+                logger.debug(f'User data serialized for: {user.email}')
+            except Exception as ser_error:
+                logger.error(f'Error serializing user data for {user.email}: {str(ser_error)}',
+                           exc_info=True)
+                # Return tokens anyway, even if serialization fails
+                user_data = {
+                    'id': str(user.id),
+                    'email': user.email,
+                    'is_super_admin': user.is_super_admin
+                }
 
-        logger.warning(f'Failed login attempt for email: {email}')
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({
+                'message': 'Login successful',
+                'user': user_data,
+                'tokens': tokens
+            })
 
-    logger.warning(f'Invalid login request data: {serializer.errors}')
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as token_error:
+            logger.error(f'CRITICAL: Token generation failed for user {user.email} (ID: {user.id}): {str(token_error)}',
+                        exc_info=True)
+            return Response({
+                'error': 'Token generation failed',
+                'details': str(token_error) if request.META.get('DEBUG') else 'Internal server error'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Exception as auth_error:
+        logger.error(f'CRITICAL: Unexpected error during login for email {email}: {str(auth_error)}',
+                    exc_info=True)
+        return Response({
+            'error': 'Authentication error',
+            'details': str(auth_error) if request.META.get('DEBUG') else 'Internal server error'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
