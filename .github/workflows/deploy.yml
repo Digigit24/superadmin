@@ -4,53 +4,44 @@ on:
   push:
     branches:
       - main
-      - master
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to EC2
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
+      - name: Checkout repo (optional)
         uses: actions/checkout@v4
 
-      - name: Setup SSH
+      - name: Start ssh-agent and add private key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
-      - name: Add server to known hosts
+      - name: Add server to known_hosts
         run: |
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          mkdir -p ~/.ssh
+          # Use SSH_HOST from secrets
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Deploy to server
+      - name: Run remote deploy.sh on server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+           # e.g. /home/ubuntu/src/CRM/superadmin
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            cd src/CRM/superadmin
-            
-            # Pull latest changes
-            git pull origin main
-            
-            # Activate virtual environment
-            source venv/bin/activate
-            
-            # Install/update dependencies
-            pip install -r requirements.txt
-            
-            # Run Django migrations
-            python manage.py migrate
-            
-            # Collect static files
-            python manage.py collectstatic --noinput
-            
-            # Restart application (adjust based on your setup)
-            sudo systemctl restart gunicorn
-            sudo systemctl restart nginx
-            
-            echo "Deployment completed successfully!"
-          EOF
+          if [ -z "$SSH_PORT" ]; then
+            SSH_BASE="ssh -o StrictHostKeyChecking=yes $SSH_USER@$SSH_HOST"
+          else
+            SSH_BASE="ssh -p $SSH_PORT -o StrictHostKeyChecking=yes $SSH_USER@$SSH_HOST"
+          fi
 
-      
-        
+          if [ -n "${REMOTE_PROJECT_DIR:-}" ]; then
+            REMOTE_SCRIPT="/home/ubuntu/src/CRM/superadmin/deploy.sh"
+          else
+            REMOTE_SCRIPT="~/deploy.sh"
+          fi
+
+          echo "Calling remote script: $REMOTE_SCRIPT"
+          $SSH_BASE "bash -lc 'if [ -x \"$REMOTE_SCRIPT\" ]; then sudo bash \"$REMOTE_SCRIPT\"; else echo \"ERROR: $REMOTE_SCRIPT not found or not executable\"; exit 2; fi'"
