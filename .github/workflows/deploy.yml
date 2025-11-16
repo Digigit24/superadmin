@@ -1,0 +1,47 @@
+name: Deploy Django App to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (optional)
+        uses: actions/checkout@v4
+
+      - name: Start ssh-agent and add private key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          # Use SSH_HOST from secrets
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Run remote deploy.sh on server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+           # e.g. /home/ubuntu/src/CRM/superadmin
+        run: |
+          if [ -z "$SSH_PORT" ]; then
+            SSH_BASE="ssh -o StrictHostKeyChecking=yes $SSH_USER@$SSH_HOST"
+          else
+            SSH_BASE="ssh -p $SSH_PORT -o StrictHostKeyChecking=yes $SSH_USER@$SSH_HOST"
+          fi
+
+          if [ -n "${REMOTE_PROJECT_DIR:-}" ]; then
+            REMOTE_SCRIPT="/home/ubuntu/src/CRM/superadmin/deploy.sh"
+          else
+            REMOTE_SCRIPT="/home/ubuntu/src/CRM/superadmin/deploy.sh"
+          fi
+
+          echo "Calling remote script: $REMOTE_SCRIPT"
+          $SSH_BASE "bash -lc 'if [ -x \"$REMOTE_SCRIPT\" ]; then sudo bash \"$REMOTE_SCRIPT\"; else echo \"ERROR: $REMOTE_SCRIPT not found or not executable\"; exit 2; fi'"
