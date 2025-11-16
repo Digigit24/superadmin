@@ -11,6 +11,9 @@ from apps.accounts.serializers import (
 from apps.accounts.services import get_tokens_for_user
 from apps.common.permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember
 from apps.common.constants import PERMISSION_SCHEMA
+from apps.common.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @api_view(['POST'])
@@ -20,12 +23,14 @@ def register_view(request):
     if serializer.is_valid():
         result = serializer.save()
         user = result['user']
+        logger.info(f'New user registered: {user.email}')
         tokens = get_tokens_for_user(user)
         return Response({
             'message': 'Registration successful',
             'user': UserSerializer(user).data,
             'tokens': tokens
         }, status=status.HTTP_201_CREATED)
+    logger.warning(f'Registration failed: {serializer.errors}')
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -34,20 +39,31 @@ def register_view(request):
 def login_view(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
+        email = serializer.validated_data['email']
         user = authenticate(
             request,
-            username=serializer.validated_data['email'],
+            username=email,
             password=serializer.validated_data['password']
         )
-        
+
         if user and user.is_active:
-            tokens = get_tokens_for_user(user)
-            return Response({
-                'message': 'Login successful',
-                'user': UserSerializer(user).data,
-                'tokens': tokens
-            })
+            logger.info(f'User logged in successfully: {user.email}, tenant: {user.tenant.slug if user.tenant else "No tenant"}')
+            try:
+                tokens = get_tokens_for_user(user)
+                logger.debug(f'JWT tokens generated for user: {user.email}')
+                return Response({
+                    'message': 'Login successful',
+                    'user': UserSerializer(user).data,
+                    'tokens': tokens
+                })
+            except Exception as e:
+                logger.error(f'Error generating tokens for user {user.email}: {str(e)}', exc_info=True)
+                return Response({'error': 'Token generation failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        logger.warning(f'Failed login attempt for email: {email}')
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    logger.warning(f'Invalid login request data: {serializer.errors}')
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -57,8 +73,10 @@ def logout_view(request):
         refresh_token = request.data.get('refresh_token')
         token = RefreshToken(refresh_token)
         token.blacklist()
+        logger.info(f'User logged out: {request.user.email}')
         return Response({'message': 'Logout successful'})
-    except Exception:
+    except Exception as e:
+        logger.warning(f'Logout failed for user {request.user}: {str(e)}')
         return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
 
 
