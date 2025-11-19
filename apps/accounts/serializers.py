@@ -28,27 +28,35 @@ class RoleSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     roles = RoleSerializer(many=True, read_only=True)
     role_ids = serializers.ListField(
-        child=serializers.UUIDField(), 
-        write_only=True, 
+        child=serializers.UUIDField(),
+        write_only=True,
         required=False
     )
-    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
-    
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True, allow_null=True)
+
     class Meta:
         model = CustomUser
-        fields = ['id', 'email', 'phone', 'first_name', 'last_name', 'tenant', 
-                  'tenant_name', 'roles', 'role_ids', 'is_super_admin', 
+        fields = ['id', 'email', 'phone', 'first_name', 'last_name', 'tenant',
+                  'tenant_name', 'roles', 'role_ids', 'is_super_admin',
                   'profile_picture', 'timezone', 'is_active', 'date_joined']
         read_only_fields = ['id', 'tenant', 'is_super_admin', 'date_joined']
     
+    def to_representation(self, instance):
+        """Ensure id is always included in the response"""
+        data = super().to_representation(instance)
+        # Explicitly ensure id is present and is a string
+        if instance.id:
+            data['id'] = str(instance.id)
+        return data
+
     def update(self, instance, validated_data):
         role_ids = validated_data.pop('role_ids', None)
         instance = super().update(instance, validated_data)
-        
+
         if role_ids is not None:
             roles = Role.objects.filter(id__in=role_ids, tenant=instance.tenant)
             instance.roles.set(roles)
-        
+
         return instance
 
 

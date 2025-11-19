@@ -111,7 +111,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return CustomUser.objects.none()
     
     def get_permissions(self):
-        if self.action in ['me', 'update_me']:
+        if self.action in ['me', 'update_me', 'create']:
             return [permissions.IsAuthenticated()]
         return [IsTenantAdmin()]
     
@@ -124,27 +124,63 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.save()
 
     def create(self, request, *args, **kwargs):
+        logger.info(f'Create user request from: {request.user.email if request.user.is_authenticated else "Anonymous"}')
+        logger.debug(f'Request data: {request.data}')
+
         # Security check: non-super-admins can only create users in their own tenant
         if not request.user.is_super_admin:
             tenant_id = request.data.get('tenant')
-            if tenant_id and str(request.user.tenant.id) != str(tenant_id):
-                logger.warning(f'User {request.user.email} attempted to create user in different tenant')
+            if tenant_id:
+                # Validate tenant exists and user has access
+                if not request.user.tenant:
+                    logger.error(f'User {request.user.email} has no tenant assigned')
+                    return Response(
+                        {'error': 'Your account is not associated with a tenant'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                if str(request.user.tenant.id) != str(tenant_id):
+                    logger.warning(f'User {request.user.email} attempted to create user in different tenant')
+                    return Response(
+                        {'error': 'You can only create users in your own tenant'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            user = serializer.instance
+
+            if not user or not user.id:
+                logger.error('User object created but has no ID')
                 return Response(
-                    {'error': 'You can only create users in your own tenant'},
-                    status=status.HTTP_403_FORBIDDEN
+                    {'error': 'User creation failed - no ID generated'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        user = serializer.instance
+            logger.info(f'User created successfully: {user.email} (ID: {user.id}) in tenant: {user.tenant.slug if user.tenant else "No tenant"}')
 
-        logger.info(f'User created successfully: {user.email} (ID: {user.id}) in tenant: {user.tenant.slug if user.tenant else "No tenant"}')
+            # Use UserSerializer for the response (includes id and all fields)
+            response_serializer = UserSerializer(user)
+            response_data = response_serializer.data
 
-        # Use UserSerializer for the response (includes id and all fields)
-        response_serializer = UserSerializer(user)
-        headers = self.get_success_headers(response_serializer.data)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            # Ensure id is in the response
+            if 'id' not in response_data:
+                logger.error(f'Serializer did not include id field. Data: {response_data}')
+                response_data['id'] = str(user.id)
+
+            logger.debug(f'Response data: {response_data}')
+
+            headers = self.get_success_headers(response_data)
+            return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+
+        except Exception as e:
+            logger.error(f'Error creating user: {str(e)}', exc_info=True)
+            return Response(
+                {'error': f'Failed to create user: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     
     @action(detail=False, methods=['get'])
