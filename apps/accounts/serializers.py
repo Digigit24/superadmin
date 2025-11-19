@@ -63,8 +63,10 @@ class UserCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CustomUser
-        fields = ['email', 'password', 'password_confirm', 'phone', 'first_name', 
+        fields = ['id', 'email', 'password', 'password_confirm', 'phone', 'first_name', 
                   'last_name', 'role_ids', 'timezone']
+        
+        read_only_fields = ['id']
     
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
