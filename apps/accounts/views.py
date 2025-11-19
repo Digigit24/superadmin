@@ -160,10 +160,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 )
 
             logger.info(f'User created successfully: {user.email} (ID: {user.id}) in tenant: {user.tenant.slug if user.tenant else "No tenant"}')
-
+            response_data = UserSerializer(user).data
             # Use UserSerializer for the response (includes id and all fields)
-            response_serializer = UserSerializer(user)
-            response_data = response_serializer.data
+           
+            
 
             # Ensure id is in the response
             if 'id' not in response_data:
