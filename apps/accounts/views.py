@@ -121,6 +121,18 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.save(tenant=user.tenant)
         else:
             serializer.save()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        user = serializer.instance
+        
+        # Use UserSerializer for the response (includes id and all fields)
+        response_serializer = UserSerializer(user)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
     
     @action(detail=False, methods=['get'])
     def me(self, request):
