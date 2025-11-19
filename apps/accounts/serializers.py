@@ -56,16 +56,17 @@ class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
     role_ids = serializers.ListField(
-        child=serializers.UUIDField(), 
-        write_only=True, 
+        child=serializers.UUIDField(),
+        write_only=True,
         required=False
     )
-    
+    tenant = serializers.UUIDField(required=False, allow_null=True)
+
     class Meta:
         model = CustomUser
-        fields = ['id', 'email', 'password', 'password_confirm', 'phone', 'first_name', 
-                  'last_name', 'role_ids', 'timezone']
-        
+        fields = ['id', 'email', 'password', 'password_confirm', 'phone', 'first_name',
+                  'last_name', 'tenant', 'role_ids', 'timezone']
+
         read_only_fields = ['id']
     
     def validate(self, attrs):
@@ -76,14 +77,23 @@ class UserCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         role_ids = validated_data.pop('role_ids', [])
-        
+
+        # Handle tenant_id if provided as UUID
+        tenant_id = validated_data.pop('tenant', None)
+        if tenant_id:
+            try:
+                tenant = Tenant.objects.get(id=tenant_id)
+                validated_data['tenant'] = tenant
+            except Tenant.DoesNotExist:
+                raise serializers.ValidationError({"tenant": f"Tenant with id {tenant_id} does not exist"})
+
         password = validated_data.pop('password')
         user = CustomUser.objects.create_user(password=password, **validated_data)
-        
-        if role_ids:
+
+        if role_ids and user.tenant:
             roles = Role.objects.filter(id__in=role_ids, tenant=user.tenant)
             user.roles.set(roles)
-        
+
         return user
 
 

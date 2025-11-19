@@ -117,17 +117,30 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         user = self.request.user
-        if not user.is_super_admin:
+        # Only set tenant from logged-in user if tenant is not provided in request
+        if not user.is_super_admin and 'tenant' not in serializer.validated_data:
             serializer.save(tenant=user.tenant)
         else:
             serializer.save()
 
     def create(self, request, *args, **kwargs):
+        # Security check: non-super-admins can only create users in their own tenant
+        if not request.user.is_super_admin:
+            tenant_id = request.data.get('tenant')
+            if tenant_id and str(request.user.tenant.id) != str(tenant_id):
+                logger.warning(f'User {request.user.email} attempted to create user in different tenant')
+                return Response(
+                    {'error': 'You can only create users in your own tenant'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         user = serializer.instance
-        
+
+        logger.info(f'User created successfully: {user.email} (ID: {user.id}) in tenant: {user.tenant.slug if user.tenant else "No tenant"}')
+
         # Use UserSerializer for the response (includes id and all fields)
         response_serializer = UserSerializer(user)
         headers = self.get_success_headers(response_serializer.data)
