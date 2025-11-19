@@ -76,6 +76,10 @@ class UserCreateSerializer(serializers.ModelSerializer):
                   'last_name', 'tenant', 'role_ids', 'timezone']
 
         read_only_fields = ['id']
+
+    def to_representation(self, instance):
+        """Return full user data including id after creation"""
+        return UserSerializer(instance).data
     
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
