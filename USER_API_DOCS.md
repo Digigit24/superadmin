@@ -14,12 +14,14 @@ Authorization: Bearer <your-jwt-token>
 The API now supports **automatic tenant ID extraction** from request headers. You can pass the tenant ID in two ways:
 
 ### Option 1: Request Headers (Recommended for Tenant Apps)
-Include the tenant ID in the request headers:
+Include the tenant ID in the request headers. All of these headers are supported:
 ```http
 x-tenant-id: 8cf51f60-39ff-4094-ac0c-91fec5f36565
+x-tenant-slug: jeevisha
+tenanttoken: 8cf51f60-39ff-4094-ac0c-91fec5f36565
 ```
 
-The backend will automatically populate the `tenant` field from this header if not provided in the request body.
+The backend will automatically populate the `tenant` field from the `x-tenant-id` header if not provided in the request body. The `x-tenant-slug` and `tenanttoken` headers are also allowed through CORS for your convenience.
 
 ### Option 2: Request Body
 Include the tenant ID directly in the JSON payload:
@@ -37,7 +39,9 @@ Include the tenant ID directly in the JSON payload:
 ```http
 POST /api/users/
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
-x-tenant-id: 8cf51f60-39ff-4094-ac0c-91fec5f36565
+x-tenant-id: d2bcd1ee-e5c5-4c9f-bff2-aaf901d40440
+x-tenant-slug: gore
+tenanttoken: d2bcd1ee-e5c5-4c9f-bff2-aaf901d40440
 Content-Type: application/json
 
 {
@@ -123,3 +127,12 @@ Content-Type: application/json
 - The `x-tenant-id` header is validated against the authenticated user's tenant
 - Password must meet Django's password validation requirements
 - All user IDs are UUIDs returned as strings
+
+## CORS Configuration
+
+The backend has been configured to accept the following custom headers:
+- `x-tenant-id` - Tenant UUID (used for automatic tenant assignment)
+- `x-tenant-slug` - Tenant slug identifier
+- `tenanttoken` - Alternative tenant token header
+
+These headers will not cause CORS errors when sent from your frontend application.
