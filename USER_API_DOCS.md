@@ -1,6 +1,11 @@
-# User Creation API - Documentation for Frontend
+# Users API - Documentation for Frontend
 
-## Endpoint
+## Endpoints
+
+### List Users
+`GET /api/users/`
+
+### Create User
 `POST /api/users/`
 
 ## Authentication
@@ -9,9 +14,28 @@ Requires JWT authentication token in the `Authorization` header:
 Authorization: Bearer <your-jwt-token>
 ```
 
-## Tenant ID Support
+## Tenant-Based Filtering
 
-The API now supports **automatic tenant ID extraction** from request headers. You can pass the tenant ID in two ways:
+### GET /api/users/ - List Users
+
+When the `x-tenant-id` header is present, the API will **automatically filter** users by that tenant:
+
+```http
+GET /api/users/?page=1
+Authorization: Bearer <your-jwt-token>
+x-tenant-id: d2bcd1ee-e5c5-4c9f-bff2-aaf901d40440
+x-tenant-slug: gore
+```
+
+**Behavior:**
+- **With `x-tenant-id` header**: Returns only users belonging to the specified tenant
+- **Without header (super admin)**: Returns all users across all tenants
+- **Without header (regular user)**: Returns only users from the user's own tenant
+- **Security**: Non-super-admin users can only access their own tenant's users
+
+### POST /api/users/ - Create User
+
+The API supports **automatic tenant ID extraction** from request headers. You can pass the tenant ID in two ways:
 
 ### Option 1: Request Headers (Recommended for Tenant Apps)
 Include the tenant ID in the request headers. All of these headers are supported:
@@ -70,7 +94,36 @@ Content-Type: application/json
 | tenant | UUID | No | Tenant ID (auto-populated from x-tenant-id header if not provided) |
 | role_ids | array[UUID] | No | Array of role IDs to assign to the user |
 
-## Response Example (201 Created)
+## GET Response Example (200 OK)
+
+```json
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "8b393428-fee3-458d-8329-e6f1d36ffc8d",
+      "email": "gore@gmail.com",
+      "phone": null,
+      "first_name": "Admin",
+      "last_name": "User",
+      "tenant": "d2bcd1ee-e5c5-4c9f-bff2-aaf901d40440",
+      "tenant_name": "gore",
+      "roles": [],
+      "is_super_admin": true,
+      "profile_picture": null,
+      "timezone": "Asia/Kolkata",
+      "is_active": true,
+      "date_joined": "2025-11-23T22:07:27.464478+05:30"
+    }
+  ]
+}
+```
+
+**Note**: When you send `x-tenant-id: d2bcd1ee-e5c5-4c9f-bff2-aaf901d40440`, you'll only get users with that tenant ID, filtering out users with `"tenant": null` or different tenant IDs.
+
+## POST Response Example (201 Created)
 
 ```json
 {

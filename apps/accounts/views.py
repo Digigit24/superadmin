@@ -104,6 +104,22 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+
+        # Check for x-tenant-id header for tenant filtering
+        x_tenant_id = self.request.headers.get('x-tenant-id') or self.request.headers.get('X-Tenant-Id')
+
+        # If x-tenant-id header is present, filter by that tenant
+        if x_tenant_id:
+            # Validate access: super admins can access any tenant, others only their own
+            if not user.is_super_admin:
+                if not user.tenant or str(user.tenant.id) != str(x_tenant_id):
+                    logger.warning(f'User {user.email} attempted to access users from different tenant')
+                    return CustomUser.objects.none()
+
+            logger.info(f'Filtering users by x-tenant-id header: {x_tenant_id}')
+            return CustomUser.objects.filter(tenant=x_tenant_id)
+
+        # Default behavior when no header is present
         if user.is_super_admin:
             return CustomUser.objects.all()
         elif user.tenant:
