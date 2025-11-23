@@ -104,6 +104,22 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+
+        # Check for x-tenant-id header for tenant filtering
+        x_tenant_id = self.request.headers.get('x-tenant-id') or self.request.headers.get('X-Tenant-Id')
+
+        # If x-tenant-id header is present, filter by that tenant
+        if x_tenant_id:
+            # Validate access: super admins can access any tenant, others only their own
+            if not user.is_super_admin:
+                if not user.tenant or str(user.tenant.id) != str(x_tenant_id):
+                    logger.warning(f'User {user.email} attempted to access users from different tenant')
+                    return CustomUser.objects.none()
+
+            logger.info(f'Filtering users by x-tenant-id header: {x_tenant_id}')
+            return CustomUser.objects.filter(tenant=x_tenant_id)
+
+        # Default behavior when no header is present
         if user.is_super_admin:
             return CustomUser.objects.all()
         elif user.tenant:
@@ -127,9 +143,20 @@ class UserViewSet(viewsets.ModelViewSet):
         logger.info(f'Create user request from: {request.user.email if request.user.is_authenticated else "Anonymous"}')
         logger.debug(f'Request data: {request.data}')
 
+        # Extract tenant_id from x-tenant-id header if present
+        x_tenant_id = request.headers.get('x-tenant-id') or request.headers.get('X-Tenant-Id')
+
+        # Prepare mutable request data
+        request_data = request.data.copy()
+
+        # If x-tenant-id header is present and tenant is not in request body, use the header value
+        if x_tenant_id and 'tenant' not in request_data:
+            request_data['tenant'] = x_tenant_id
+            logger.info(f'Tenant ID extracted from x-tenant-id header: {x_tenant_id}')
+
         # Security check: non-super-admins can only create users in their own tenant
         if not request.user.is_super_admin:
-            tenant_id = request.data.get('tenant')
+            tenant_id = request_data.get('tenant')
             if tenant_id:
                 # Validate tenant exists and user has access
                 if not request.user.tenant:
@@ -147,7 +174,7 @@ class UserViewSet(viewsets.ModelViewSet):
                     )
 
         try:
-            serializer = self.get_serializer(data=request.data)
+            serializer = self.get_serializer(data=request_data)
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
             user = serializer.instance
