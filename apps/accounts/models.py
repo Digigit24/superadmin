@@ -37,10 +37,15 @@ class CustomUser(AbstractUser):
     is_super_admin = models.BooleanField(default=False, help_text="Platform super admin")
     profile_picture = models.URLField(max_length=500, blank=True, null=True)
     timezone = models.CharField(max_length=50, default='Asia/Kolkata')
-    
+    preferences = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="User-specific preferences and settings (theme, notifications, dashboard layout, etc.)"
+    )
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
-    
+
     objects = CustomUserManager()
     
     class Meta:

@@ -38,7 +38,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ['id', 'email', 'phone', 'first_name', 'last_name', 'tenant',
                   'tenant_name', 'roles', 'role_ids', 'is_super_admin',
-                  'profile_picture', 'timezone', 'is_active', 'date_joined']
+                  'profile_picture', 'timezone', 'preferences', 'is_active', 'date_joined']
         read_only_fields = ['id', 'tenant', 'is_super_admin', 'date_joined']
     
     def to_representation(self, instance):
@@ -73,7 +73,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'email', 'password', 'password_confirm', 'phone', 'first_name',
-                  'last_name', 'tenant', 'role_ids', 'timezone']
+                  'last_name', 'tenant', 'role_ids', 'timezone', 'preferences']
 
         read_only_fields = ['id']
 
