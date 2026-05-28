@@ -1,7 +1,14 @@
 import uuid
+from datetime import timedelta
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.conf import settings
+from django.utils import timezone
 from apps.tenants.models import Tenant
+
+
+def default_integration_token_expiry():
+    return timezone.now() + timedelta(days=3650)
 
 
 class CustomUserManager(BaseUserManager):
@@ -77,3 +84,122 @@ class Role(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.tenant.name})"
+
+
+class IntegrationToken(models.Model):
+    """
+    Long-lived JWT service account owned by a tenant for server-to-server integrations.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='integration_tokens')
+    name = models.CharField(max_length=150)
+    integration_name = models.SlugField(
+        max_length=150,
+        help_text="Stable machine name, e.g. make_meta_leads"
+    )
+    service_account_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    email = models.EmailField(blank=True)
+    enabled_modules = models.JSONField(
+        default=list,
+        help_text="Modules this token can access, e.g. ['crm']"
+    )
+    permissions = models.JSONField(
+        default=dict,
+        help_text="Nested permissions JSON, e.g. {'crm': {'leads': {'create': true}}}"
+    )
+    full_access = models.BooleanField(
+        default=False,
+        help_text="Grant all actions for the selected enabled modules."
+    )
+    is_active = models.BooleanField(default=True)
+    token_jti = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    expires_at = models.DateTimeField(
+        default=default_integration_token_expiry,
+        help_text="JWT expiry. Default is approximately 10 years."
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_integration_tokens'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'integration_tokens'
+        unique_together = [['tenant', 'integration_name']]
+        ordering = ['tenant__name', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.tenant.name})"
+
+    @property
+    def is_revoked(self):
+        return self.revoked_at is not None
+
+    def save(self, *args, **kwargs):
+        if not self.email:
+            self.email = f"{self.integration_name}@system.local"
+        if not self.enabled_modules and self.tenant_id:
+            self.enabled_modules = self.tenant.enabled_modules
+        if self.full_access:
+            self.permissions = self.build_full_access_permissions()
+        super().save(*args, **kwargs)
+
+    def build_full_access_permissions(self):
+        from apps.common.constants import PERMISSION_SCHEMA
+
+        modules = self.enabled_modules or []
+        permissions = {}
+        for module_key in modules:
+            module_schema = PERMISSION_SCHEMA.get(module_key)
+            if not module_schema:
+                continue
+            permissions[module_key] = {}
+            for resource_key, resource_schema in module_schema.get('resources', {}).items():
+                permissions[module_key][resource_key] = {}
+                for action_key, action_schema in resource_schema.get('actions', {}).items():
+                    permissions[module_key][resource_key][action_key] = (
+                        'all' if action_schema.get('type') == 'scope' else True
+                    )
+        return permissions
+
+    def rotate(self):
+        self.token_jti = uuid.uuid4()
+        self.revoked_at = None
+        self.is_active = True
+        self.save(update_fields=['token_jti', 'revoked_at', 'is_active', 'updated_at'])
+
+    def revoke(self):
+        self.revoked_at = timezone.now()
+        self.is_active = False
+        self.save(update_fields=['revoked_at', 'is_active', 'updated_at'])
+
+    def mark_used(self):
+        self.last_used_at = timezone.now()
+        self.save(update_fields=['last_used_at', 'updated_at'])
+
+    def generate_jwt(self):
+        import jwt
+        from django.conf import settings
+
+        now = timezone.now()
+        payload = {
+            'token_type': 'integration',
+            'integration_name': self.integration_name,
+            'jti': str(self.token_jti),
+            'user_id': str(self.service_account_id),
+            'email': self.email,
+            'tenant_id': str(self.tenant.id),
+            'tenant_slug': self.tenant.slug,
+            'is_super_admin': False,
+            'enabled_modules': self.enabled_modules,
+            'permissions': self.permissions,
+            'iat': int(now.timestamp()),
+            'exp': int(self.expires_at.timestamp()),
+        }
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
