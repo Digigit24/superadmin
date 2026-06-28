@@ -118,8 +118,13 @@ class IsTenantAdmin(BasePermission):
         if request.user.is_super_admin:
             return True
         
-        user_perms = getattr(request.user, 'cached_permissions', {})
-        return has_permission(user_perms, 'admin.full_access')
+        user_perms = getattr(request.user, 'cached_permissions', None)
+        if user_perms is None and hasattr(request.user, 'get_merged_permissions'):
+            user_perms = request.user.get_merged_permissions()
+        return (
+            has_permission(user_perms, 'admin.full_access') or
+            has_permission(user_perms, 'admin.full_access.enabled')
+        )
 
 
 class IsTenantMember(BasePermission):

@@ -1,6 +1,183 @@
 # apps/common/constants.py
 
 PERMISSION_SCHEMA = {
+    "admin": {
+        "label": "Administration",
+        "resources": {
+            "full_access": {
+                "label": "Full Admin Access",
+                "actions": {
+                    "enabled": {"type": "boolean"}
+                }
+            },
+            "users": {
+                "label": "Users",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "roles": {
+                "label": "Roles & Permissions",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "settings": {
+                "label": "Tenant Settings",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            }
+        }
+    },
+    "hms": {
+        "label": "Hospital Management",
+        "resources": {
+            "hospital": {
+                "label": "Hospital Configuration",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "edit_config": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "patients": {
+                "label": "Patients",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "doctors": {
+                "label": "Doctors & Specialties",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]},
+                    "set_availability": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "appointments": {
+                "label": "Appointments",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "cancel": {"type": "scope", "options": ["own", "team", "all"]},
+                    "reschedule": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "opd": {
+                "label": "OPD",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]},
+                    "consult": {"type": "scope", "options": ["own", "team", "all"]},
+                    "bill": {"type": "scope", "options": ["own", "team", "all"]},
+                    "settings": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "ipd": {
+                "label": "IPD",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]},
+                    "admit": {"type": "boolean"},
+                    "discharge": {"type": "scope", "options": ["own", "team", "all"]},
+                    "transfer": {"type": "scope", "options": ["own", "team", "all"]},
+                    "bill": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "diagnostics": {
+                "label": "Diagnostics",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]},
+                    "order": {"type": "boolean"},
+                    "report": {"type": "scope", "options": ["own", "team", "all"]},
+                    "approve": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "pharmacy": {
+                "label": "Pharmacy",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]},
+                    "sell": {"type": "boolean"},
+                    "stock_adjust": {"type": "scope", "options": ["own", "team", "all"]},
+                    "statistics": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "payments": {
+                "label": "Payments",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "export": {"type": "scope", "options": ["own", "team", "all"]},
+                    "refund": {"type": "scope", "options": ["own", "team", "all"]},
+                    "reconcile": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "services": {
+                "label": "Services",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "orders": {
+                "label": "Orders & Razorpay",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "pay": {"type": "scope", "options": ["own", "team", "all"]},
+                    "refund": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "panchakarma": {
+                "label": "Panchakarma",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            }
+        }
+    },
     "crm": {
         "label": "CRM",
         "resources": {

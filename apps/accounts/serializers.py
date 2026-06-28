@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from apps.accounts.models import CustomUser, Role
+from apps.accounts.models import CustomUser, Role, IntegrationToken
 from apps.tenants.models import Tenant
 from apps.common.constants import PERMISSION_SCHEMA
 from datetime import datetime, timedelta
@@ -22,6 +22,42 @@ class RoleSerializer(serializers.ModelSerializer):
     def validate_permissions(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Permissions must be a JSON object")
+        return value
+
+
+class IntegrationTokenSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    created_by_email = serializers.EmailField(source='created_by.email', read_only=True)
+
+    class Meta:
+        model = IntegrationToken
+        fields = [
+            'id', 'tenant', 'tenant_name', 'name', 'integration_name', 'email',
+            'enabled_modules', 'permissions', 'full_access', 'is_active',
+            'expires_at', 'revoked_at', 'last_used_at', 'created_by',
+            'created_by_email', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'tenant', 'revoked_at', 'last_used_at', 'created_by',
+            'created_by_email', 'created_at', 'updated_at'
+        ]
+
+    def validate_enabled_modules(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("enabled_modules must be a list")
+
+        tenant = self.context.get('tenant')
+        if tenant:
+            disabled_modules = set(value) - set(tenant.enabled_modules)
+            if disabled_modules:
+                raise serializers.ValidationError(
+                    f"These modules are not enabled for this tenant: {sorted(disabled_modules)}"
+                )
+        return value
+
+    def validate_permissions(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("permissions must be a JSON object")
         return value
 
 

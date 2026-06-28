@@ -6,6 +6,7 @@ from apps.accounts import views
 router = DefaultRouter()
 router.register('users', views.UserViewSet, basename='user')
 router.register('roles', views.RoleViewSet, basename='role')
+router.register('integration-tokens', views.IntegrationTokenViewSet, basename='integration-token')
 
 urlpatterns = [
     path('auth/register/', views.register_view, name='register'),
