@@ -200,6 +200,35 @@ PERMISSION_SCHEMA = {
                     "delete": {"type": "boolean"}
                 }
             },
+            "statuses": {
+                "label": "Lead Statuses",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "tasks": {
+                "label": "Tasks",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "assign": {"type": "boolean"}
+                }
+            },
+            "meetings": {
+                "label": "Meetings",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"},
+                    "cancel": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
             "payments": {
                 "label": "Payments",
                 "actions": {
@@ -207,6 +236,13 @@ PERMISSION_SCHEMA = {
                     "create": {"type": "boolean"},
                     "edit": {"type": "scope", "options": ["own", "team", "all"]},
                     "delete": {"type": "boolean"}
+                }
+            },
+            "settings": {
+                "label": "CRM Settings",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]}
                 }
             }
         }
@@ -219,6 +255,8 @@ PERMISSION_SCHEMA = {
                 "actions": {
                     "send": {"type": "boolean"},
                     "view": {"type": "boolean"},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "boolean"},
                     "delete": {"type": "boolean"}
                 }
             },
@@ -228,6 +266,103 @@ PERMISSION_SCHEMA = {
                     "view": {"type": "boolean"},
                     "create": {"type": "boolean"},
                     "edit": {"type": "boolean"},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "campaigns": {
+                "label": "Campaigns",
+                "actions": {
+                    "view": {"type": "boolean"},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "boolean"},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "sequences": {
+                "label": "Sequences",
+                "actions": {
+                    "view": {"type": "boolean"},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "boolean"},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "settings": {
+                "label": "WhatsApp Settings",
+                "actions": {
+                    "view": {"type": "boolean"},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "boolean"},
+                    "delete": {"type": "boolean"}
+                }
+            }
+        }
+    },
+    "integrations": {
+        "label": "Integrations",
+        "resources": {
+            "providers": {
+                "label": "Providers",
+                "actions": {"view": {"type": "boolean"}}
+            },
+            "connections": {
+                "label": "Connections",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "workflows": {
+                "label": "Workflows",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            }
+        }
+    },
+    "telephony": {
+        "label": "Telephony",
+        "resources": {
+            "calls": {
+                "label": "Calls",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "sms": {
+                "label": "SMS",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"}
+                }
+            },
+            "agents": {
+                "label": "Agents",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "callbacks": {
+                "label": "Callbacks",
+                "actions": {"view": {"type": "scope", "options": ["own", "team", "all"]}}
+            },
+            "settings": {
+                "label": "Telephony Settings",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
                     "delete": {"type": "boolean"}
                 }
             }
