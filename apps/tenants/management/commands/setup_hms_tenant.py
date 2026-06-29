@@ -48,6 +48,10 @@ class Command(BaseCommand):
                     "settings": {"view": "all", "edit": "all"},
                 },
                 "hms": {
+                    "clinical": {
+                        "view": "all", "create": True, "edit": "all",
+                        "delete": True, "export": "all",
+                    },
                     "hospital": {
                         "view": "all", "edit_config": "all", "create": True,
                         "edit": "all", "delete": True,
@@ -106,6 +110,9 @@ class Command(BaseCommand):
             "description": "Doctor — own OPD/IPD consultations, team patient view, diagnostics ordering",
             "permissions": {
                 "hms": {
+                    "clinical": {
+                        "view": "team", "create": True, "edit": "own",
+                    },
                     "patients": {
                         "view": "team",   # can see patients in their area
                         "create": True,   # may register walk-ins
@@ -155,6 +162,9 @@ class Command(BaseCommand):
             "description": "Nurse — team IPD/OPD clinical support, patient vitals and care",
             "permissions": {
                 "hms": {
+                    "clinical": {
+                        "view": "team", "create": True, "edit": "team",
+                    },
                     "patients": {
                         "view": "team",
                         "edit": "team",     # update vitals, notes
