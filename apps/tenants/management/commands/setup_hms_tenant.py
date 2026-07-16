@@ -7,7 +7,7 @@ Usage:
 
 What it does:
   1. Finds (or creates) a tenant with 'hms' in enabled_modules
-  2. Seeds 7 system roles with permissions that match the PERMISSION_SCHEMA in
+  2. Seeds 8 system roles with permissions that match the PERMISSION_SCHEMA in
      apps/common/constants.py — the same schema the frontend PermissionMatrix renders
   3. Creates one sample user per role (password: Celiyo@2026)
   4. Prints the tenant_id UUID needed for digihms seed data
@@ -19,12 +19,14 @@ Role permission design:
   - receptionist   : all patient registration, all appointments, all OPD triage, basic IPD view
   - cashier        : all payments/billing, opd & ipd bill actions
   - pharmacist     : full pharmacy (sell, stock, statistics), patient view
+  - lab_technician : diagnostics work queue + reporting, patient view
   - staff          : read-only view across patients/appointments/opd/ipd
 """
 
 from django.core.management.base import BaseCommand
 from apps.tenants.models import Tenant
 from apps.accounts.models import CustomUser, Role
+from apps.tenants.role_seeds import validate_role_seeds
 
 
 class Command(BaseCommand):
@@ -50,7 +52,7 @@ class Command(BaseCommand):
                 "hms": {
                     "clinical": {
                         "view": "all", "create": True, "edit": "all",
-                        "delete": True, "export": "all",
+                        "delete": True,
                     },
                     "hospital": {
                         "view": "all", "edit_config": "all", "create": True,
@@ -111,12 +113,12 @@ class Command(BaseCommand):
             "permissions": {
                 "hms": {
                     "clinical": {
-                        "view": "team", "create": True, "edit": "own",
+                        "view": "all", "create": True, "edit": "own",
                     },
                     "patients": {
-                        "view": "team",   # can see patients in their area
+                        "view": "all",   # tenant-wide legacy team scope
                         "create": True,   # may register walk-ins
-                        "edit": "team",
+                        "edit": "all",
                         "export": "own",
                     },
                     "doctors": {
@@ -145,12 +147,12 @@ class Command(BaseCommand):
                         "transfer": "own",
                     },
                     "diagnostics": {
-                        "view": "team",
+                        "view": "all",
                         "order": True,      # can order tests
-                        "report": "team",   # can view reports
+                        "report": "all",   # can view reports
                     },
                     "pharmacy": {
-                        "view": "team",     # view prescriptions
+                        "view": "all",     # view prescriptions
                     },
                 },
             },
@@ -163,33 +165,33 @@ class Command(BaseCommand):
             "permissions": {
                 "hms": {
                     "clinical": {
-                        "view": "team", "create": True, "edit": "team",
+                        "view": "all", "create": True, "edit": "all",
                     },
                     "patients": {
-                        "view": "team",
-                        "edit": "team",     # update vitals, notes
+                        "view": "all",
+                        "edit": "all",     # update vitals, notes
                     },
                     "doctors": {
                         "view": "all",      # see doctor list for referrals
                     },
                     "appointments": {
-                        "view": "team",
-                        "edit": "team",     # can update appointment status
+                        "view": "all",
+                        "edit": "all",     # can update appointment status
                     },
                     "opd": {
-                        "view": "team",
-                        "edit": "team",     # triage notes, vitals
+                        "view": "all",
+                        "edit": "all",     # triage notes, vitals
                     },
                     "ipd": {
-                        "view": "team",
-                        "edit": "team",     # nursing notes, vitals
+                        "view": "all",
+                        "edit": "all",     # nursing notes, vitals
                     },
                     "diagnostics": {
-                        "view": "team",
-                        "report": "team",   # view/upload reports
+                        "view": "all",
+                        "report": "all",   # view/upload reports
                     },
                     "pharmacy": {
-                        "view": "team",     # view prescriptions for dispensing reference
+                        "view": "all",     # view prescriptions for dispensing reference
                     },
                 },
             },
@@ -300,22 +302,43 @@ class Command(BaseCommand):
             },
         },
 
-        # ── 7. staff ───────────────────────────────────────────────────────
+        # ── 7. lab_technician ──────────────────────────────────────────────
+        {
+            "name": "lab_technician",
+            "description": "Lab Technician — diagnostics work queue, sample/status updates, report entry",
+            "permissions": {
+                "hms": {
+                    "patients": {
+                        "view": "all",      # look up patient for diagnostics work queue
+                    },
+                    "diagnostics": {
+                        "view": "all",      # see requisitions/orders
+                        "edit": "all",      # update order status/sample workflow
+                        "create": True,     # create lab reports/results
+                        "report": "all",    # enter/update diagnostic results
+                    },
+                },
+            },
+        },
+
+        # ── 8. staff ───────────────────────────────────────────────────────
         {
             "name": "staff",
             "description": "General Staff — read-only view across HMS modules",
             "permissions": {
                 "hms": {
-                    "patients": {"view": "team"},
+                    "patients": {"view": "all"},
                     "doctors": {"view": "all"},
-                    "appointments": {"view": "team"},
-                    "opd": {"view": "team"},
-                    "ipd": {"view": "team"},
+                    "appointments": {"view": "all"},
+                    "opd": {"view": "all"},
+                    "ipd": {"view": "all"},
                     "services": {"view": "all"},
                 },
             },
         },
     ]
+
+    HMS_ROLES = validate_role_seeds(HMS_ROLES)
 
     # One sample user per role
     HMS_USERS = [
@@ -350,6 +373,11 @@ class Command(BaseCommand):
             "role": "pharmacist",
         },
         {
+            "email": "labtech@digitech.celiyo.com",
+            "first_name": "Kavita", "last_name": "Iyer",
+            "role": "lab_technician",
+        },
+        {
             "email": "staff@digitech.celiyo.com",
             "first_name": "Meena", "last_name": "Rao",
             "role": "staff",
@@ -367,7 +395,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Overwrite permissions on existing roles (default: only update if role already exists)",
+            help="Overwrite permissions on existing roles and reset sample-user roles",
         )
         parser.add_argument(
             "--no-users",
@@ -454,9 +482,11 @@ class Command(BaseCommand):
                     self.stdout.write(f"  → Existing user: {user.email}")
 
                 role = role_map.get(user_def["role"])
-                if role:
+                if role and (user.email == user_def["email"] and (force or user.roles.count() == 0)):
                     user.roles.set([role])
                     self.stdout.write(f"      role → {user_def['role']}")
+                elif role:
+                    self.stdout.write(f"      role unchanged (use --force to reset)")
 
         # ── 5. Summary ────────────────────────────────────────────────────
         self.stdout.write("")

@@ -1,6 +1,10 @@
 # apps/common/permissions.py
 
+import logging
+
 from rest_framework.permissions import BasePermission
+
+logger = logging.getLogger(__name__)
 
 
 def flatten_permissions(role_permissions_json):
@@ -78,9 +82,15 @@ def has_permission(user_permissions, permission_string, resource_owner_id=None, 
         bool: True if user has permission
     """
     if permission_string not in user_permissions:
-        return False
-    
-    perm_value = user_permissions[permission_string]
+        # TEMPORARY migration reader: the canonical admin flag now has the
+        # explicit action suffix. Remove after legacy grants are migrated.
+        if permission_string == 'admin.full_access.enabled' and 'admin.full_access' in user_permissions:
+            perm_value = user_permissions['admin.full_access']
+            logger.warning('permission_legacy_admin_full_access_normalized')
+        else:
+            return False
+    else:
+        perm_value = user_permissions[permission_string]
     
     if isinstance(perm_value, bool):
         return perm_value
@@ -121,10 +131,7 @@ class IsTenantAdmin(BasePermission):
         user_perms = getattr(request.user, 'cached_permissions', None)
         if user_perms is None and hasattr(request.user, 'get_merged_permissions'):
             user_perms = request.user.get_merged_permissions()
-        return (
-            has_permission(user_perms, 'admin.full_access') or
-            has_permission(user_perms, 'admin.full_access.enabled')
-        )
+        return has_permission(user_perms, 'admin.full_access.enabled')
 
 
 class IsTenantMember(BasePermission):

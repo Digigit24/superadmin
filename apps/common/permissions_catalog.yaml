@@ -1,0 +1,137 @@
+# Canonical CeliyoHMS permission catalog. Flat dotted keys are the only canonical format.
+version: 1
+migration_notes:
+  - "The only catalog scope values are own and all. Legacy team grants are read as all with a logged warning in Phase 2."
+  - "Deprecated entries remain for migration/telemetry only and are not emitted to role-editor schemas or frontend constants."
+defaults:
+  active_hms: &active_hms
+    allowed_values: [own, all]
+    scope_model: own_all
+    status: active
+    enforced_by: ["dghms.common.drf_auth.HMSPermission"]
+  active_boolean: &active_boolean
+    allowed_values: [boolean]
+    scope_model: none
+    status: active
+    enforced_by: ["dghms.common.drf_auth.HMSPermission"]
+entries:
+  # Explicit keys whose schema/enforcement differs from the resource defaults.
+  - <<: *active_boolean
+    key: admin.full_access.enabled
+    sensitive: true
+    label: Full Admin Access
+    module: admin
+    resource: full_access
+    action: enabled
+    enforced_by: ["superadmin.apps.common.permissions.IsTenantAdmin"]
+  - <<: *active_boolean
+    key: hms.patients.view_reports
+    label: View Patient Reports
+    module: hms
+    resource: patients
+    action: view_reports
+    enforced_by: ["dghms.apps.patients.views.PatientViewSet.statistics"]
+  - <<: *active_hms
+    key: hms.clinical.view
+    label: View Clinical Records
+    module: hms
+    resource: clinical
+    action: view
+    enforced_by: ["dghms.apps.clinical.views (HMSPermission)"]
+  - <<: *active_boolean
+    key: hms.clinical.create
+    label: Create Clinical Records
+    module: hms
+    resource: clinical
+    action: create
+    enforced_by: ["dghms.apps.clinical.views (HMSPermission)"]
+  - <<: *active_hms
+    key: hms.clinical.edit
+    label: Edit Clinical Records
+    module: hms
+    resource: clinical
+    action: edit
+    enforced_by: ["dghms.apps.clinical.views (HMSPermission)"]
+  - <<: *active_boolean
+    key: hms.clinical.delete
+    label: Delete Clinical Records
+    module: hms
+    resource: clinical
+    action: delete
+    enforced_by: ["dghms.apps.clinical.views (HMSPermission)"]
+  - <<: *active_hms
+    key: hms.inventory.view
+    label: View Inventory
+    module: hms
+    resource: inventory
+    action: view
+    enforced_by: ["dghms.apps.inventory.views (HMSPermission)"]
+  - <<: *active_boolean
+    key: hms.inventory.create
+    label: Create Inventory Records
+    module: hms
+    resource: inventory
+    action: create
+    enforced_by: ["dghms.apps.inventory.views (HMSPermission)"]
+  - <<: *active_hms
+    key: hms.inventory.edit
+    label: Edit Inventory
+    module: hms
+    resource: inventory
+    action: edit
+    enforced_by: ["dghms.apps.inventory.views (HMSPermission)"]
+  - <<: *active_boolean
+    key: hms.inventory.delete
+    label: Delete Inventory Records
+    module: hms
+    resource: inventory
+    action: delete
+    enforced_by: ["dghms.apps.inventory.views (HMSPermission)"]
+
+  # Legacy aliases and un-namespaced fixture entries. null means no runtime equivalent.
+  - {key: hms.inventory.manage, label: "Legacy inventory manage", module: hms, resource: inventory, action: manage, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.inventory.edit}
+  - {key: admin.full_access, label: "Legacy flat full admin access", module: admin, resource: full_access, action: legacy, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["superadmin.apps.common.permissions.IsTenantAdmin"], alias_of: admin.full_access.enabled}
+  - {key: billing.view_reports, label: "Legacy billing reports", module: billing, resource: billing, action: view_reports, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.patients.view_reports}
+  - {key: hms.admin.view, label: "Legacy HMS admin view", module: hms, resource: admin, action: view, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["dghms.apps.auth.views.UserViewSet", "dghms.apps.auth.views.RoleViewSet"], alias_of: null, note: "Legacy generic admin gate honored by UserViewSet and RoleViewSet; no single canonical alias — migrate roles to admin.users.* / admin.roles.* / admin.full_access.enabled"}
+  - {key: hms.admin.create, label: "Legacy HMS admin create", module: hms, resource: admin, action: create, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["dghms.apps.auth.views.UserViewSet", "dghms.apps.auth.views.RoleViewSet"], alias_of: null, note: "Legacy generic admin gate honored by UserViewSet and RoleViewSet; no single canonical alias — migrate roles to admin.users.* / admin.roles.* / admin.full_access.enabled"}
+  - {key: hms.admin.edit, label: "Legacy HMS admin edit", module: hms, resource: admin, action: edit, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["dghms.apps.auth.views.UserViewSet", "dghms.apps.auth.views.RoleViewSet"], alias_of: null, note: "Legacy generic admin gate honored by UserViewSet and RoleViewSet; no single canonical alias — migrate roles to admin.users.* / admin.roles.* / admin.full_access.enabled"}
+  - {key: hms.admin.delete, label: "Legacy HMS admin delete", module: hms, resource: admin, action: delete, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["dghms.apps.auth.views.UserViewSet", "dghms.apps.auth.views.RoleViewSet"], alias_of: null, note: "Legacy generic admin gate honored by UserViewSet and RoleViewSet; no single canonical alias — migrate roles to admin.users.* / admin.roles.* / admin.full_access.enabled"}
+  - {key: patients.view, label: "Legacy patient view", module: legacy, resource: patients, action: view, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.patients.view}
+  - {key: patients.create, label: "Legacy patient create", module: legacy, resource: patients, action: create, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.patients.create}
+  - {key: patients.edit, label: "Legacy patient edit", module: legacy, resource: patients, action: edit, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.patients.edit}
+  - {key: opd.view, label: "Legacy OPD view", module: legacy, resource: opd, action: view, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.opd.view}
+  - {key: opd.create, label: "Legacy OPD create", module: legacy, resource: opd, action: create, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.opd.create}
+  - {key: opd.manage, label: "Legacy OPD manage", module: legacy, resource: opd, action: manage, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: null, note: "no runtime equivalent"}
+  - {key: ipd.view, label: "Legacy IPD view", module: legacy, resource: ipd, action: view, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.ipd.view}
+  - {key: ipd.manage, label: "Legacy IPD manage", module: legacy, resource: ipd, action: manage, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: null, note: "no runtime equivalent"}
+  - {key: clinical.view_record, label: "Legacy clinical view record", module: legacy, resource: clinical, action: view_record, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.clinical.view}
+  - {key: clinical.create_record, label: "Legacy clinical create record", module: legacy, resource: clinical, action: create_record, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.clinical.create}
+  - {key: clinical.manage_forms, label: "Legacy clinical manage forms", module: legacy, resource: clinical, action: manage_forms, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: null, note: "no runtime equivalent"}
+  - {key: inventory.view, label: "Legacy inventory view", module: legacy, resource: inventory, action: view, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.inventory.view}
+  - {key: inventory.manage, label: "Legacy inventory manage", module: legacy, resource: inventory, action: manage, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.inventory.edit}
+  - {key: pharmacy.view_prescriptions, label: "Legacy prescription view", module: legacy, resource: pharmacy, action: view_prescriptions, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.pharmacy.view}
+  - {key: pharmacy.dispense, label: "Legacy dispense", module: legacy, resource: pharmacy, action: dispense, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.pharmacy.sell}
+  - {key: billing.view, label: "Legacy billing view", module: legacy, resource: billing, action: view, allowed_values: [own, all], scope_model: own_all, status: deprecated, enforced_by: ["none"], alias_of: hms.payments.view}
+  - {key: billing.create, label: "Legacy billing create", module: legacy, resource: billing, action: create, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.payments.create}
+  - {key: settings.manage, label: "Legacy settings manage", module: legacy, resource: settings, action: manage, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: admin.settings.edit}
+
+# Declarative active entries expand to full catalog entries with the defaults above.
+resource_actions:
+  admin:
+    users: {view: scope, create: boolean, edit: scope, delete: boolean}
+    roles: {view: scope, create: boolean, edit: scope, delete: boolean}
+    settings: {view: scope, edit: scope}
+  hms:
+    hospital: {view: scope, edit_config: scope, create: boolean, edit: scope, delete: boolean}
+    patients: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope}
+    doctors: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope, set_availability: scope}
+    appointments: {view: scope, create: boolean, edit: scope, delete: boolean, cancel: scope, reschedule: scope}
+    opd: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope, consult: scope, bill: scope, settings: scope}
+    ipd: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope, admit: boolean, discharge: scope, transfer: scope, bill: scope}
+    diagnostics: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope, order: boolean, report: scope, approve: scope}
+    pharmacy: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope, sell: boolean, stock_adjust: scope, statistics: scope}
+    payments: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope, refund: scope, reconcile: scope}
+    services: {view: scope, create: boolean, edit: scope, delete: boolean}
+    orders: {view: scope, create: boolean, edit: scope, delete: boolean, pay: scope, refund: scope}
+    panchakarma: {view: scope, create: boolean, edit: scope, delete: boolean}
+    webhooks: {view: scope, create: boolean, edit: scope, delete: boolean}
