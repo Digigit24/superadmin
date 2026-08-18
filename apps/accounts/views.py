@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
@@ -12,7 +13,8 @@ from apps.accounts.serializers import (
 from apps.accounts.services import get_tokens_for_user
 from apps.common.pagination import StandardResultsSetPagination
 from apps.common.permissions import (
-    IsSuperAdmin, IsTenantAdmin, IsTenantMember, is_trusted_tenant_selector
+    IsSuperAdmin, IsTenantAdmin, IsTenantMember,
+    is_platform_super_admin, get_service_token_tenant_id,
 )
 from apps.common.constants import PERMISSION_SCHEMA
 from apps.common.logger import get_logger
@@ -127,26 +129,39 @@ class UserViewSet(viewsets.ModelViewSet):
 
         Precedence (this is the security core, do not reorder):
 
-        1. Trusted principals (platform super-admin, or a service/integration
-           token) may target a tenant with the ``x-tenant-id`` header. With no
-           header they see every user.
-        2. Everyone else is scoped to the tenant on their own user record. Any
+        1. A service/integration token is **pinned** to the single tenant that
+           minted it (its ``tenant_id`` claim). It may repeat that tenant in
+           ``x-tenant-id``, but asking for any other tenant is a 403 - a
+           service principal is not a super-admin.
+        2. A platform super-admin may target any tenant with ``x-tenant-id``.
+           With no header it sees every user.
+        3. Everyone else is scoped to the tenant on their own user record. Any
            client-supplied ``x-tenant-id`` is ignored outright - it can neither
            widen nor narrow their scope.
+
+        The service branch is checked first so that a pinned token can never be
+        widened by whichever user row it happens to authenticate as.
         """
         user = self.request.user
         # HttpHeaders lookups are already case-insensitive.
         x_tenant_id = self.request.headers.get('x-tenant-id')
 
-        if is_trusted_tenant_selector(self.request):
+        service_tenant_id = get_service_token_tenant_id(self.request)
+        if service_tenant_id is not None:
+            if x_tenant_id and str(x_tenant_id) != service_tenant_id:
+                logger.warning(
+                    f'Service token for tenant {service_tenant_id} attempted to '
+                    f'select tenant {x_tenant_id!r}'
+                )
+                raise PermissionDenied(
+                    'This integration token may only access its own tenant.'
+                )
+            return self._filter_by_tenant_id(service_tenant_id)
+
+        if is_platform_super_admin(self.request):
             if x_tenant_id:
-                try:
-                    tenant_uuid = uuid.UUID(str(x_tenant_id))
-                except (ValueError, AttributeError, TypeError):
-                    logger.warning(f'Rejecting malformed x-tenant-id header: {x_tenant_id!r}')
-                    return CustomUser.objects.none()
-                logger.info(f'Service/super-admin request scoped to tenant {tenant_uuid}')
-                return CustomUser.objects.filter(tenant_id=tenant_uuid)
+                logger.info(f'Super-admin request scoped to tenant {x_tenant_id!r}')
+                return self._filter_by_tenant_id(x_tenant_id)
             return CustomUser.objects.all()
 
         if x_tenant_id and (not user.tenant_id or str(user.tenant_id) != str(x_tenant_id)):
@@ -158,6 +173,16 @@ class UserViewSet(viewsets.ModelViewSet):
         if user.tenant_id:
             return CustomUser.objects.filter(tenant_id=user.tenant_id)
         return CustomUser.objects.none()
+
+    @staticmethod
+    def _filter_by_tenant_id(tenant_id):
+        """Filter on a tenant id that came from outside, failing closed."""
+        try:
+            tenant_uuid = uuid.UUID(str(tenant_id))
+        except (ValueError, AttributeError, TypeError):
+            logger.warning(f'Rejecting malformed tenant id: {tenant_id!r}')
+            return CustomUser.objects.none()
+        return CustomUser.objects.filter(tenant_id=tenant_uuid)
 
     def get_permissions(self):
         if self.action in ['me', 'update_me', 'create']:

@@ -108,37 +108,50 @@ def has_permission(user_permissions, permission_string, resource_owner_id=None, 
     return False
 
 
-def is_trusted_tenant_selector(request):
-    """May this caller choose an arbitrary tenant via the ``x-tenant-id`` header?
+def is_platform_super_admin(request):
+    """May this caller select an *arbitrary* tenant via ``x-tenant-id``?
 
-    Only two kinds of principal qualify:
-
-    * a platform super-admin (``CustomUser.is_super_admin``), and
-    * a service / integration principal acting on behalf of a tenant
-      (``token_type == 'integration'`` with a ``service_account_id`` claim).
-
-    Everyone else is scoped strictly by the tenant on their own authenticated
-    user. A normal user token must never be able to widen its own scope by
-    sending a header, so callers must treat a ``False`` result as
-    "ignore the header entirely".
+    Only a platform super-admin. Nothing else on the platform is allowed to
+    pick a tenant freely - see :func:`get_service_token_tenant_id` for the
+    service path, which is pinned to a single tenant instead.
     """
     user = getattr(request, 'user', None)
     if not user or not user.is_authenticated:
         return False
+    return bool(getattr(user, 'is_super_admin', False))
 
-    if getattr(user, 'is_super_admin', False):
-        return True
 
+def get_service_token_tenant_id(request):
+    """The single tenant a service/integration token is pinned to, or ``None``.
+
+    An ``IntegrationToken`` is minted by, and belongs to, exactly one tenant,
+    and ``IntegrationToken.generate_jwt()`` stamps that tenant on the
+    ``tenant_id`` claim. Such a token is trusted to act for *that* tenant and
+    for no other, so callers must scope to this value and must **not** let the
+    request override it - being a service principal is not the same thing as
+    being a super-admin.
+
+    Fails closed: an integration token whose ``tenant_id`` claim is missing or
+    unreadable resolves to no tenant at all rather than to a wide scope.
+    """
     token = getattr(request, 'auth', None)
     getter = getattr(token, 'get', None)
-    if callable(getter):
-        try:
-            if getter('token_type') == 'integration' and getter('service_account_id'):
-                return True
-        except Exception:  # pragma: no cover - defensive, unknown auth object
-            logger.warning('permission_trusted_selector_token_unreadable')
+    if not callable(getter):
+        return None
 
-    return False
+    try:
+        if getter('token_type') != 'integration':
+            return None
+        tenant_id = getter('tenant_id')
+    except Exception:  # pragma: no cover - defensive, unknown auth object
+        logger.warning('permission_service_token_unreadable')
+        return None
+
+    if not tenant_id:
+        logger.warning('permission_service_token_missing_tenant_claim')
+        return None
+
+    return str(tenant_id)
 
 
 class IsSuperAdmin(BasePermission):

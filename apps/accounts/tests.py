@@ -1,7 +1,9 @@
+from django.conf import settings
 from django.test import TestCase
 from rest_framework.test import APITestCase
 from rest_framework import status
-from apps.accounts.models import CustomUser, Role
+from rest_framework_simplejwt.tokens import AccessToken
+from apps.accounts.models import CustomUser, IntegrationToken, Role
 from apps.common.pagination import StandardResultsSetPagination
 from apps.tenants.models import Tenant
 
@@ -322,3 +324,104 @@ class UserDirectoryAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         response = self.client.delete(f'{self.LIST_URL}{self.mate_a.id}/')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class IntegrationTokenTenantScopeTests(APITestCase):
+    """A service/integration token is pinned to the tenant that minted it.
+
+    Being a service principal is not the same thing as being a super-admin: a
+    super-admin may select any tenant with ``x-tenant-id``, an integration
+    token may only ever see its own.
+    """
+
+    LIST_URL = '/api/users/'
+
+    def setUp(self):
+        self.tenant_a = Tenant.objects.create(name='Tenant A', slug='tenant-a')
+        self.tenant_b = Tenant.objects.create(name='Tenant B', slug='tenant-b')
+
+        self.user_a = CustomUser.objects.create_user(
+            email='asha@example.com', password='TestPass123!',
+            first_name='Asha', last_name='Rao', tenant=self.tenant_a,
+        )
+        self.user_b = CustomUser.objects.create_user(
+            email='secret-b@example.com', password='TestPass123!',
+            first_name='Carol', last_name='Other', tenant=self.tenant_b,
+        )
+        # Deliberately tenant-less: any tenant-A row in a response therefore
+        # came from the *token claim*, not from this user's own record.
+        self.service_user = CustomUser.objects.create_user(
+            email='service@system.local', password='TestPass123!',
+        )
+
+        self.token_a = IntegrationToken.objects.create(
+            tenant=self.tenant_a, name='CRM sync', integration_name='crm_sync',
+            enabled_modules=['crm'],
+        )
+
+    def authenticate_as_service(self, tenant_id='__own__'):
+        """Authenticate with an integration-shaped token for a tenant."""
+        token = AccessToken()
+        token['token_type'] = 'integration'
+        if tenant_id is not None:
+            token['tenant_id'] = (
+                str(self.token_a.tenant_id) if tenant_id == '__own__' else str(tenant_id)
+            )
+        token['is_super_admin'] = False
+        self.client.force_authenticate(user=self.service_user, token=token)
+
+    def emails(self, response):
+        return {row['email'] for row in response.data['results']}
+
+    def test_integration_token_cannot_select_a_foreign_tenant(self):
+        """Tenant A's own token must not be able to read Tenant B."""
+        self.authenticate_as_service()
+        response = self.client.get(self.LIST_URL, HTTP_X_TENANT_ID=str(self.tenant_b.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_integration_token_is_pinned_to_its_own_tenant(self):
+        self.authenticate_as_service()
+
+        # No header: scope comes from the token's own tenant_id claim.
+        response = self.client.get(self.LIST_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.emails(response), {'asha@example.com'})
+
+        # Echoing its own tenant back is allowed and changes nothing.
+        response = self.client.get(self.LIST_URL, HTTP_X_TENANT_ID=str(self.tenant_a.id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.emails(response), {'asha@example.com'})
+
+    def test_integration_token_without_a_tenant_claim_fails_closed(self):
+        self.authenticate_as_service(tenant_id=None)
+        response = self.client.get(self.LIST_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 0)
+
+    def test_integration_jwt_is_currently_rejected_by_the_auth_layer(self):
+        """Documents *why* the pinned-service path is unreachable today.
+
+        SuperAdmin's only DRF auth class is stock simplejwt, configured with
+        ``AUTH_TOKEN_CLASSES = (AccessToken,)`` and ``TOKEN_TYPE_CLAIM``, so a
+        real ``IntegrationToken`` JWT (``token_type='integration'``, and a
+        ``user_id`` that is a service-account UUID matching no CustomUser row)
+        never authenticates. If integration-token authentication is ever wired
+        up, this test fails loudly and the pinning above becomes live - do not
+        delete it, update it together with the auth wiring.
+        """
+        self.assertEqual(
+            settings.SIMPLE_JWT['AUTH_TOKEN_CLASSES'],
+            ('rest_framework_simplejwt.tokens.AccessToken',),
+            'Integration tokens may now authenticate - re-check tenant pinning '
+            'in UserViewSet.get_queryset and apps/common/permissions.py.',
+        )
+        self.assertFalse(
+            CustomUser.objects.filter(id=self.token_a.service_account_id).exists(),
+            'Integration service accounts are not CustomUser rows.',
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {self.token_a.generate_jwt()}'
+        )
+        response = self.client.get(self.LIST_URL, HTTP_X_TENANT_ID=str(self.tenant_b.id))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

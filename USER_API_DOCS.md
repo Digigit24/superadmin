@@ -43,15 +43,21 @@ Authorization: Bearer <your-jwt-token>
 The tenant scope is derived from the **authenticated principal**, never from a
 client-supplied parameter. Precedence, in order:
 
-1. **Trusted principal** - a platform super-admin, or a service/integration
-   token. It may target a specific tenant with the `x-tenant-id` header. With no
-   header, it sees **all users across all tenants**.
-2. **Everyone else** - scoped to the tenant on their own user record. A
+1. **Service / integration token** - **pinned** to the one tenant that minted
+   it (the `tenant_id` claim stamped by `IntegrationToken.generate_jwt()`). It
+   may echo that same tenant in `x-tenant-id`, but asking for any other tenant
+   is a **403**. A service principal is not a super-admin: it cannot select a
+   tenant. A token with no readable `tenant_id` claim gets an empty list.
+2. **Platform super-admin** - may target any tenant with `x-tenant-id`. With no
+   header, sees **all users across all tenants**. This is the only principal
+   with free tenant selection.
+3. **Everyone else** - scoped to the tenant on their own user record. A
    client-supplied `x-tenant-id` header is **ignored entirely**; it can neither
    widen nor narrow the scope. A user with no tenant gets an empty list.
 
-A malformed (non-UUID) `x-tenant-id` from a trusted principal returns an empty
-result set rather than an error.
+The service branch is evaluated first, so a pinned token cannot be widened by
+whichever principal it authenticates as. A malformed (non-UUID) tenant id
+returns an empty result set rather than an error.
 
 #### `x-tenant-id` - service-to-service header
 
@@ -62,10 +68,11 @@ x-tenant-id: d2bcd1ee-e5c5-4c9f-bff2-aaf901d40440
 ```
 
 This is the supported path for digicrm, which proxies this endpoint for its CRM
-user directory. **The service JWT must belong to a super-admin or
-service/integration principal** - if the token is an ordinary tenant user's
-token, the header is ignored and the response is scoped to that user's own
-tenant instead.
+user directory. **The service JWT must belong to a super-admin** for the header
+to select a tenant. If the token is an ordinary tenant user's token the header
+is ignored (scope falls back to that user's own tenant); if it is an
+integration token the header must name that token's own tenant or the request
+is rejected with 403.
 
 `x-tenant-slug` and `tenanttoken` are allowed through CORS but are **not** used
 for scoping on this endpoint.
@@ -216,8 +223,13 @@ Also returned when a non-admin calls a detail/write action (`retrieve`,
 - `GET /api/users/` is tenant-scoped server-side. A normal user token cannot
   read another tenant's users under any combination of headers or query
   parameters.
-- `x-tenant-id` is a **trusted-principal-only** control on this endpoint. For an
-  ordinary user token it is ignored, not honoured and not an error.
+- `x-tenant-id` is a **super-admin-only** selector on this endpoint. For an
+  ordinary user token it is ignored (not honoured, not an error); for an
+  integration token it may only repeat that token's own tenant, otherwise 403.
+- Note that integration-token JWTs (`token_type='integration'`) are currently
+  rejected outright by SuperAdmin's authentication layer, so the service path
+  above is latent. The pinning is enforced regardless, so wiring up
+  integration-token auth cannot silently open a cross-tenant hole.
 - Non-admin list responses are served by `UserDirectorySerializer`, which cannot
   leak credentials, tokens, roles, permissions, preferences or `is_super_admin`.
 - Non-super-admins may only create users inside their own tenant.
