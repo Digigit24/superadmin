@@ -108,6 +108,39 @@ def has_permission(user_permissions, permission_string, resource_owner_id=None, 
     return False
 
 
+def is_trusted_tenant_selector(request):
+    """May this caller choose an arbitrary tenant via the ``x-tenant-id`` header?
+
+    Only two kinds of principal qualify:
+
+    * a platform super-admin (``CustomUser.is_super_admin``), and
+    * a service / integration principal acting on behalf of a tenant
+      (``token_type == 'integration'`` with a ``service_account_id`` claim).
+
+    Everyone else is scoped strictly by the tenant on their own authenticated
+    user. A normal user token must never be able to widen its own scope by
+    sending a header, so callers must treat a ``False`` result as
+    "ignore the header entirely".
+    """
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated:
+        return False
+
+    if getattr(user, 'is_super_admin', False):
+        return True
+
+    token = getattr(request, 'auth', None)
+    getter = getattr(token, 'get', None)
+    if callable(getter):
+        try:
+            if getter('token_type') == 'integration' and getter('service_account_id'):
+                return True
+        except Exception:  # pragma: no cover - defensive, unknown auth object
+            logger.warning('permission_trusted_selector_token_unreadable')
+
+    return False
+
+
 class IsSuperAdmin(BasePermission):
     """
     Permission class for super admins only.

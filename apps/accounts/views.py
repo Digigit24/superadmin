@@ -11,10 +11,13 @@ from apps.accounts.serializers import (
 )
 from apps.accounts.services import get_tokens_for_user
 from apps.common.pagination import StandardResultsSetPagination
-from apps.common.permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember
+from apps.common.permissions import (
+    IsSuperAdmin, IsTenantAdmin, IsTenantMember, is_trusted_tenant_selector
+)
 from apps.common.constants import PERMISSION_SCHEMA
 from apps.common.logger import get_logger
 import io
+import uuid
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import json
@@ -120,34 +123,52 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
     
     def get_queryset(self):
+        """Tenant-scope the user list from the *authenticated principal*.
+
+        Precedence (this is the security core, do not reorder):
+
+        1. Trusted principals (platform super-admin, or a service/integration
+           token) may target a tenant with the ``x-tenant-id`` header. With no
+           header they see every user.
+        2. Everyone else is scoped to the tenant on their own user record. Any
+           client-supplied ``x-tenant-id`` is ignored outright - it can neither
+           widen nor narrow their scope.
+        """
         user = self.request.user
+        # HttpHeaders lookups are already case-insensitive.
+        x_tenant_id = self.request.headers.get('x-tenant-id')
 
-        # Check for x-tenant-id header for tenant filtering
-        x_tenant_id = self.request.headers.get('x-tenant-id') or self.request.headers.get('X-Tenant-Id')
-
-        # If x-tenant-id header is present, filter by that tenant
-        if x_tenant_id:
-            # Validate access: super admins can access any tenant, others only their own
-            if not user.is_super_admin:
-                if not user.tenant or str(user.tenant.id) != str(x_tenant_id):
-                    logger.warning(f'User {user.email} attempted to access users from different tenant')
+        if is_trusted_tenant_selector(self.request):
+            if x_tenant_id:
+                try:
+                    tenant_uuid = uuid.UUID(str(x_tenant_id))
+                except (ValueError, AttributeError, TypeError):
+                    logger.warning(f'Rejecting malformed x-tenant-id header: {x_tenant_id!r}')
                     return CustomUser.objects.none()
-
-            logger.info(f'Filtering users by x-tenant-id header: {x_tenant_id}')
-            return CustomUser.objects.filter(tenant=x_tenant_id)
-
-        # Default behavior when no header is present
-        if user.is_super_admin:
+                logger.info(f'Service/super-admin request scoped to tenant {tenant_uuid}')
+                return CustomUser.objects.filter(tenant_id=tenant_uuid)
             return CustomUser.objects.all()
-        elif user.tenant:
-            return CustomUser.objects.filter(tenant=user.tenant)
+
+        if x_tenant_id and (not user.tenant_id or str(user.tenant_id) != str(x_tenant_id)):
+            logger.warning(
+                f'Ignoring x-tenant-id header from non-service user {user.email}; '
+                f'scoping to their own tenant instead'
+            )
+
+        if user.tenant_id:
+            return CustomUser.objects.filter(tenant_id=user.tenant_id)
         return CustomUser.objects.none()
-    
+
     def get_permissions(self):
         if self.action in ['me', 'update_me', 'create']:
             return [permissions.IsAuthenticated()]
+        if self.action == 'list':
+            # Any authenticated user may read their own tenant's directory.
+            # get_queryset() enforces the tenant scope and get_serializer_class()
+            # reduces the payload to the safe shape for non-admins.
+            return [permissions.IsAuthenticated()]
         return [IsTenantAdmin()]
-    
+
     def perform_create(self, serializer):
         user = self.request.user
         # Only set tenant from logged-in user if tenant is not provided in request
