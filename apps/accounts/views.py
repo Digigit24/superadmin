@@ -10,6 +10,7 @@ from apps.accounts.serializers import (
     RegisterSerializer, LoginSerializer, ChangePasswordSerializer
 )
 from apps.accounts.services import get_tokens_for_user
+from apps.common.pagination import StandardResultsSetPagination
 from apps.common.permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember
 from apps.common.constants import PERMISSION_SCHEMA
 from apps.common.logger import get_logger
@@ -101,7 +102,12 @@ def change_password_view(request):
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
-    
+    # Honour ?page_size= (up to 500) instead of the global hard cap of 20.
+    pagination_class = StandardResultsSetPagination
+    # SearchFilter is a project-wide default backend, but it is inert without
+    # search_fields - this is what makes ?search= actually do something.
+    search_fields = ['email', 'first_name', 'last_name']
+
     def get_serializer_class(self):
         if self.action == 'create':
             return UserCreateSerializer
