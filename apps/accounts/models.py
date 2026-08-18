@@ -61,7 +61,17 @@ class CustomUser(AbstractUser):
     
     def __str__(self):
         return self.email
-    
+
+    @property
+    def full_name(self):
+        """Human-readable name for display, never empty.
+
+        Falls back to the email address so callers can render this value
+        directly without their own ``|| email`` dance.
+        """
+        name = f"{self.first_name or ''} {self.last_name or ''}".strip()
+        return name or self.email
+
     def get_merged_permissions(self):
         """Get merged permissions from all active roles."""
         from apps.common.permissions import merge_role_permissions

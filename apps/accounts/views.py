@@ -6,8 +6,8 @@ from django.contrib.auth import authenticate
 from django.http import HttpResponse
 from apps.accounts.models import CustomUser, Role, IntegrationToken
 from apps.accounts.serializers import (
-    UserSerializer, UserCreateSerializer, RoleSerializer, IntegrationTokenSerializer,
-    RegisterSerializer, LoginSerializer, ChangePasswordSerializer
+    UserSerializer, UserCreateSerializer, UserDirectorySerializer, RoleSerializer,
+    IntegrationTokenSerializer, RegisterSerializer, LoginSerializer, ChangePasswordSerializer
 )
 from apps.accounts.services import get_tokens_for_user
 from apps.common.pagination import StandardResultsSetPagination
@@ -108,9 +108,15 @@ class UserViewSet(viewsets.ModelViewSet):
     # search_fields - this is what makes ?search= actually do something.
     search_fields = ['email', 'first_name', 'last_name']
 
+    def _caller_is_tenant_admin(self):
+        return IsTenantAdmin().has_permission(self.request, self)
+
     def get_serializer_class(self):
         if self.action == 'create':
             return UserCreateSerializer
+        if self.action == 'list' and not self._caller_is_tenant_admin():
+            # Regular members may read the directory, but only the safe shape.
+            return UserDirectorySerializer
         return UserSerializer
     
     def get_queryset(self):
