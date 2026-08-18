@@ -1,10 +1,37 @@
 import os
 from pathlib import Path
-from decouple import config
+from decouple import AutoConfig, Config, RepositoryEnv
 from datetime import timedelta
 import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# ---------------------------------------------------------------------------
+# Environment file resolution
+#
+# python-decouple's default AutoConfig only ever reads ``.env``. We want a
+# local developer's ``.env.local`` to win over the shared ``.env`` without
+# anyone having to edit or clobber the latter, so build the Config explicitly.
+#
+# Precedence: DJANGO_ENV_FILE (explicit override) > .env.local > .env
+# ``.env.local`` is gitignored and must contain localhost-only values.
+# ---------------------------------------------------------------------------
+def _resolve_env_file(base_dir):
+    explicit = os.environ.get('DJANGO_ENV_FILE')
+    if explicit and Path(explicit).is_file():
+        return Path(explicit)
+    for name in ('.env.local', '.env'):
+        candidate = base_dir / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+_ENV_FILE = _resolve_env_file(BASE_DIR)
+if _ENV_FILE is not None:
+    config = Config(RepositoryEnv(str(_ENV_FILE)))
+else:
+    config = AutoConfig(search_path=str(BASE_DIR))
 
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-this-in-production-key-12345')
 DEBUG = config('DEBUG', default=True, cast=bool)

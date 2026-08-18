@@ -51,3 +51,5 @@ media/
 htmlcov/
 .tox/
 .hypothesis/
+.env.local
+.env.production
