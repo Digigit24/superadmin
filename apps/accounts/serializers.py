@@ -61,6 +61,32 @@ class IntegrationTokenSerializer(serializers.ModelSerializer):
         return value
 
 
+class UserDirectorySerializer(serializers.ModelSerializer):
+    """Safe, public shape of a user for the tenant directory.
+
+    Returned to *non-admin* callers of ``GET /api/users/`` so a regular user can
+    resolve a teammate's name without being handed roles, permissions,
+    preferences, tenant internals or the ``is_super_admin`` flag.
+
+    The key set here is a contract other services code against - do not remove
+    keys from it.
+    """
+
+    full_name = serializers.ReadOnlyField()
+    avatar = serializers.CharField(source='profile_picture', read_only=True, allow_null=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'email', 'first_name', 'last_name', 'full_name',
+                  'is_active', 'avatar']
+        read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['id'] = str(instance.id)
+        return data
+
+
 class UserSerializer(serializers.ModelSerializer):
     roles = RoleSerializer(many=True, read_only=True)
     role_ids = serializers.ListField(
@@ -69,14 +95,18 @@ class UserSerializer(serializers.ModelSerializer):
         required=False
     )
     tenant_name = serializers.CharField(source='tenant.name', read_only=True, allow_null=True)
+    full_name = serializers.ReadOnlyField()
+    avatar = serializers.CharField(source='profile_picture', read_only=True, allow_null=True)
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'email', 'phone', 'first_name', 'last_name', 'tenant',
-                  'tenant_name', 'roles', 'role_ids', 'is_super_admin',
-                  'profile_picture', 'timezone', 'preferences', 'is_active', 'date_joined']
-        read_only_fields = ['id', 'tenant', 'is_super_admin', 'date_joined']
-    
+        fields = ['id', 'email', 'phone', 'first_name', 'last_name', 'full_name',
+                  'tenant', 'tenant_name', 'roles', 'role_ids', 'is_super_admin',
+                  'profile_picture', 'avatar', 'timezone', 'preferences',
+                  'is_active', 'date_joined']
+        read_only_fields = ['id', 'tenant', 'is_super_admin', 'date_joined',
+                            'full_name', 'avatar']
+
     def to_representation(self, instance):
         """Ensure id is always included in the response"""
         data = super().to_representation(instance)

@@ -1,19 +1,25 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.http import HttpResponse
 from apps.accounts.models import CustomUser, Role, IntegrationToken
 from apps.accounts.serializers import (
-    UserSerializer, UserCreateSerializer, RoleSerializer, IntegrationTokenSerializer,
-    RegisterSerializer, LoginSerializer, ChangePasswordSerializer
+    UserSerializer, UserCreateSerializer, UserDirectorySerializer, RoleSerializer,
+    IntegrationTokenSerializer, RegisterSerializer, LoginSerializer, ChangePasswordSerializer
 )
 from apps.accounts.services import get_tokens_for_user
-from apps.common.permissions import IsSuperAdmin, IsTenantAdmin, IsTenantMember
+from apps.common.pagination import StandardResultsSetPagination
+from apps.common.permissions import (
+    IsSuperAdmin, IsTenantAdmin, IsTenantMember,
+    is_platform_super_admin, get_service_token_tenant_id,
+)
 from apps.common.constants import PERMISSION_SCHEMA
 from apps.common.logger import get_logger
 import io
+import uuid
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import json
@@ -101,41 +107,93 @@ def change_password_view(request):
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
-    
+    # Honour ?page_size= (up to 500) instead of the global hard cap of 20.
+    pagination_class = StandardResultsSetPagination
+    # SearchFilter is a project-wide default backend, but it is inert without
+    # search_fields - this is what makes ?search= actually do something.
+    search_fields = ['email', 'first_name', 'last_name']
+
+    def _caller_is_tenant_admin(self):
+        return IsTenantAdmin().has_permission(self.request, self)
+
     def get_serializer_class(self):
         if self.action == 'create':
             return UserCreateSerializer
+        if self.action == 'list' and not self._caller_is_tenant_admin():
+            # Regular members may read the directory, but only the safe shape.
+            return UserDirectorySerializer
         return UserSerializer
     
     def get_queryset(self):
+        """Tenant-scope the user list from the *authenticated principal*.
+
+        Precedence (this is the security core, do not reorder):
+
+        1. A service/integration token is **pinned** to the single tenant that
+           minted it (its ``tenant_id`` claim). It may repeat that tenant in
+           ``x-tenant-id``, but asking for any other tenant is a 403 - a
+           service principal is not a super-admin.
+        2. A platform super-admin may target any tenant with ``x-tenant-id``.
+           With no header it sees every user.
+        3. Everyone else is scoped to the tenant on their own user record. Any
+           client-supplied ``x-tenant-id`` is ignored outright - it can neither
+           widen nor narrow their scope.
+
+        The service branch is checked first so that a pinned token can never be
+        widened by whichever user row it happens to authenticate as.
+        """
         user = self.request.user
+        # HttpHeaders lookups are already case-insensitive.
+        x_tenant_id = self.request.headers.get('x-tenant-id')
 
-        # Check for x-tenant-id header for tenant filtering
-        x_tenant_id = self.request.headers.get('x-tenant-id') or self.request.headers.get('X-Tenant-Id')
+        service_tenant_id = get_service_token_tenant_id(self.request)
+        if service_tenant_id is not None:
+            if x_tenant_id and str(x_tenant_id) != service_tenant_id:
+                logger.warning(
+                    f'Service token for tenant {service_tenant_id} attempted to '
+                    f'select tenant {x_tenant_id!r}'
+                )
+                raise PermissionDenied(
+                    'This integration token may only access its own tenant.'
+                )
+            return self._filter_by_tenant_id(service_tenant_id)
 
-        # If x-tenant-id header is present, filter by that tenant
-        if x_tenant_id:
-            # Validate access: super admins can access any tenant, others only their own
-            if not user.is_super_admin:
-                if not user.tenant or str(user.tenant.id) != str(x_tenant_id):
-                    logger.warning(f'User {user.email} attempted to access users from different tenant')
-                    return CustomUser.objects.none()
-
-            logger.info(f'Filtering users by x-tenant-id header: {x_tenant_id}')
-            return CustomUser.objects.filter(tenant=x_tenant_id)
-
-        # Default behavior when no header is present
-        if user.is_super_admin:
+        if is_platform_super_admin(self.request):
+            if x_tenant_id:
+                logger.info(f'Super-admin request scoped to tenant {x_tenant_id!r}')
+                return self._filter_by_tenant_id(x_tenant_id)
             return CustomUser.objects.all()
-        elif user.tenant:
-            return CustomUser.objects.filter(tenant=user.tenant)
+
+        if x_tenant_id and (not user.tenant_id or str(user.tenant_id) != str(x_tenant_id)):
+            logger.warning(
+                f'Ignoring x-tenant-id header from non-service user {user.email}; '
+                f'scoping to their own tenant instead'
+            )
+
+        if user.tenant_id:
+            return CustomUser.objects.filter(tenant_id=user.tenant_id)
         return CustomUser.objects.none()
-    
+
+    @staticmethod
+    def _filter_by_tenant_id(tenant_id):
+        """Filter on a tenant id that came from outside, failing closed."""
+        try:
+            tenant_uuid = uuid.UUID(str(tenant_id))
+        except (ValueError, AttributeError, TypeError):
+            logger.warning(f'Rejecting malformed tenant id: {tenant_id!r}')
+            return CustomUser.objects.none()
+        return CustomUser.objects.filter(tenant_id=tenant_uuid)
+
     def get_permissions(self):
         if self.action in ['me', 'update_me', 'create']:
             return [permissions.IsAuthenticated()]
+        if self.action == 'list':
+            # Any authenticated user may read their own tenant's directory.
+            # get_queryset() enforces the tenant scope and get_serializer_class()
+            # reduces the payload to the safe shape for non-admins.
+            return [permissions.IsAuthenticated()]
         return [IsTenantAdmin()]
-    
+
     def perform_create(self, serializer):
         user = self.request.user
         # Only set tenant from logged-in user if tenant is not provided in request

@@ -108,6 +108,52 @@ def has_permission(user_permissions, permission_string, resource_owner_id=None, 
     return False
 
 
+def is_platform_super_admin(request):
+    """May this caller select an *arbitrary* tenant via ``x-tenant-id``?
+
+    Only a platform super-admin. Nothing else on the platform is allowed to
+    pick a tenant freely - see :func:`get_service_token_tenant_id` for the
+    service path, which is pinned to a single tenant instead.
+    """
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated:
+        return False
+    return bool(getattr(user, 'is_super_admin', False))
+
+
+def get_service_token_tenant_id(request):
+    """The single tenant a service/integration token is pinned to, or ``None``.
+
+    An ``IntegrationToken`` is minted by, and belongs to, exactly one tenant,
+    and ``IntegrationToken.generate_jwt()`` stamps that tenant on the
+    ``tenant_id`` claim. Such a token is trusted to act for *that* tenant and
+    for no other, so callers must scope to this value and must **not** let the
+    request override it - being a service principal is not the same thing as
+    being a super-admin.
+
+    Fails closed: an integration token whose ``tenant_id`` claim is missing or
+    unreadable resolves to no tenant at all rather than to a wide scope.
+    """
+    token = getattr(request, 'auth', None)
+    getter = getattr(token, 'get', None)
+    if not callable(getter):
+        return None
+
+    try:
+        if getter('token_type') != 'integration':
+            return None
+        tenant_id = getter('tenant_id')
+    except Exception:  # pragma: no cover - defensive, unknown auth object
+        logger.warning('permission_service_token_unreadable')
+        return None
+
+    if not tenant_id:
+        logger.warning('permission_service_token_missing_tenant_claim')
+        return None
+
+    return str(tenant_id)
+
+
 class IsSuperAdmin(BasePermission):
     """
     Permission class for super admins only.
