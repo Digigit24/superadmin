@@ -135,3 +135,31 @@ resource_actions:
     orders: {view: scope, create: boolean, edit: scope, delete: boolean, pay: scope, refund: scope}
     panchakarma: {view: scope, create: boolean, edit: scope, delete: boolean}
     webhooks: {view: scope, create: boolean, edit: scope, delete: boolean}
+  crm:
+    leads: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope}
+    activities: {view: scope, create: boolean, edit: scope, delete: boolean}
+    statuses: {view: scope, create: boolean, edit: scope, delete: boolean}
+    tasks: {view: scope, create: boolean, edit: scope, delete: scope, assign: boolean}
+    meetings: {view: scope, create: boolean, edit: scope, delete: boolean, cancel: scope}
+    payments: {view: scope, create: boolean, edit: scope, delete: boolean}
+    settings: {view: scope, edit: scope}
+  whatsapp:
+    messages: {send: boolean, view: boolean, create: boolean, edit: boolean, delete: boolean}
+    templates: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    campaigns: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    sequences: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    settings: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+  integrations:
+    providers: {view: boolean}
+    connections: {view: scope, create: boolean, edit: scope, delete: boolean}
+    workflows: {view: scope, create: boolean, edit: scope, delete: boolean}
+  telephony:
+    calls: {view: scope, create: boolean, edit: scope, delete: boolean}
+    sms: {view: scope, create: boolean}
+    agents: {view: scope, create: boolean, edit: scope, delete: boolean}
+    callbacks: {view: scope}
+    settings: {view: scope, create: boolean, edit: scope, delete: boolean}
+  meetings:
+    meetings: {view: scope, create: boolean, edit: scope, delete: scope, cancel: scope}
+  tasks:
+    tasks: {view: scope, create: boolean, edit: scope, delete: scope, assign: boolean}

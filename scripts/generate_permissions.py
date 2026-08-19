@@ -8,7 +8,6 @@ Run from any directory:
 from __future__ import annotations
 
 import argparse
-import json
 import pprint
 import sys
 from pathlib import Path
@@ -18,17 +17,35 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATH = ROOT / "superadmin" / "apps" / "common" / "permissions_catalog.yaml"
+SUPERADMIN_OUTPUT = ROOT / "superadmin" / "apps" / "common" / "generated_permissions.py"
+DGHMS_OUTPUT = ROOT / "dghms" / "common" / "generated_permissions.py"
+DIGICRM_OUTPUT = ROOT / "digicrm" / "common" / "generated_permissions.py"
+CELIYOHMS_PERMISSIONS_OUTPUT = ROOT / "celiyohms" / "src" / "constants" / "permissions.ts"
+CELIYOHMS_TYPES_OUTPUT = ROOT / "celiyohms" / "src" / "constants" / "permission-types.ts"
+SEPRATECRM_OUTPUT = ROOT / "sepratecrm" / "src" / "constants" / "permissions.ts"
 OUTPUTS = (
-    ROOT / "superadmin" / "apps" / "common" / "generated_permissions.py",
-    ROOT / "dghms" / "common" / "generated_permissions.py",
-    ROOT / "celiyohms" / "src" / "constants" / "permissions.ts",
-    ROOT / "celiyohms" / "src" / "constants" / "permission-types.ts",
+    SUPERADMIN_OUTPUT,
+    DGHMS_OUTPUT,
+    DIGICRM_OUTPUT,
+    CELIYOHMS_PERMISSIONS_OUTPUT,
+    CELIYOHMS_TYPES_OUTPUT,
+    SEPRATECRM_OUTPUT,
 )
 REQUIRED_ENTRY_FIELDS = {
     "key", "label", "module", "resource", "action", "allowed_values",
     "scope_model", "status", "enforced_by",
 }
 VALID_STATUSES = {"active", "ui_only", "deprecated"}
+CRM_MODULES = {"crm", "whatsapp", "integrations", "telephony", "meetings", "tasks"}
+
+
+def _default_enforcer(module: str) -> list[str]:
+    """Return the canonical enforcement class for a catalog module."""
+    if module == "admin":
+        return ["superadmin.apps.common.permissions.IsTenantAdmin"]
+    if module in CRM_MODULES:
+        return ["digicrm.common.permissions.HasDigiPermission"]
+    return ["dghms.common.drf_auth.HMSPermission"]
 
 
 def load_catalog() -> dict:
@@ -54,7 +71,7 @@ def load_catalog() -> dict:
                     "allowed_values": ["own", "all"] if kind == "scope" else ["boolean"],
                     "scope_model": "own_all" if kind == "scope" else "none",
                     "status": "active",
-                    "enforced_by": (["superadmin.apps.common.permissions.IsTenantAdmin"] if module == "admin" else ["dghms.common.drf_auth.HMSPermission"]),
+                    "enforced_by": _default_enforcer(module),
                     "sensitive": action == "delete" or (module == "hms" and resource == "payments" and action in {"refund", "reconcile"}),
                 })
     catalog["entries"] = entries
@@ -87,7 +104,50 @@ def python_output(catalog: dict) -> str:
     active = [entry for entry in entries if entry["status"] in {"active", "ui_only"}]
     payload = pprint.pformat(entries, width=100, sort_dicts=True)
     active_keys = pprint.pformat([entry["key"] for entry in active], width=100)
-    return f'''# GENERATED — DO NOT EDIT. Source: superadmin/apps/common/permissions_catalog.yaml\n# Catalog version: {catalog["version"]}\n\nPERMISSION_CATALOG = {payload}\n\nACTIVE_PERMISSION_KEYS = tuple({active_keys})\nPERMISSION_BY_KEY = {{entry["key"]: entry for entry in PERMISSION_CATALOG}}\n\ndef get_permission_schema():\n    \"\"\"Build the role-editor schema from active catalog entries.\"\"\"\n    schema = {{}}\n    for entry in PERMISSION_CATALOG:\n        if entry["status"] not in ("active", "ui_only"):\n            continue\n        module = schema.setdefault(entry["module"], {{"label": entry["module"].upper(), "resources": {{}}}})\n        resource = module["resources"].setdefault(entry["resource"], {{"label": entry["resource"].replace("_", " ").title(), "actions": {{}}}})\n        resource["actions"][entry["action"]] = ({{"type": "scope", "options": ["own", "all"]}} if entry["scope_model"] == "own_all" else {{"type": "boolean"}})\n    return schema\n\nPERMISSION_SCHEMA = get_permission_schema()\n'''
+    return f'''# GENERATED — DO NOT EDIT. Source: superadmin/apps/common/permissions_catalog.yaml
+# Catalog version: {catalog["version"]}
+
+PERMISSION_CATALOG = {payload}
+
+ACTIVE_PERMISSION_KEYS = tuple({active_keys})
+PERMISSION_BY_KEY = {{entry["key"]: entry for entry in PERMISSION_CATALOG}}
+
+def get_permission_schema():
+    """Build the role-editor schema from active catalog entries."""
+    schema = {{}}
+    for entry in PERMISSION_CATALOG:
+        if entry["status"] not in ("active", "ui_only"):
+            continue
+        module = schema.setdefault(entry["module"], {{"label": entry["module"].upper(), "resources": {{}}}})
+        resource = module["resources"].setdefault(entry["resource"], {{"label": entry["resource"].replace("_", " ").title(), "actions": {{}}}})
+        resource["actions"][entry["action"]] = ({{"type": "scope", "options": ["own", "all"]}} if entry["scope_model"] == "own_all" else {{"type": "boolean"}})
+    return schema
+
+PERMISSION_SCHEMA = get_permission_schema()
+'''
+
+
+def _crm_constant_name(entry: dict) -> str:
+    """Turn a CRM catalog key into a Python class attribute name."""
+    parts = entry["key"].split(".")
+    return "_".join(p.upper() for p in parts)
+
+
+def digicrm_python_output(catalog: dict) -> str:
+    """Python artifacts for DigiCRM: catalog + CRMPermissions constants class."""
+    base = python_output(catalog)
+    active = [entry for entry in catalog["entries"] if entry["status"] in {"active", "ui_only"}]
+    crm_entries = [entry for entry in active if entry["module"] in CRM_MODULES]
+    constants_lines = [f"    {_crm_constant_name(entry)} = \"{entry['key']}\"" for entry in crm_entries]
+    constants_block = "\n".join(constants_lines)
+    crm_class = f'''
+
+class CRMPermissions:
+    """Canonical CRM permission keys generated from the SuperAdmin catalog."""
+
+{constants_block}
+'''
+    return base + crm_class
 
 
 def typescript_outputs(catalog: dict) -> tuple[str, str]:
@@ -96,14 +156,48 @@ def typescript_outputs(catalog: dict) -> tuple[str, str]:
     for entry in active:
         lines.append(f'  "{entry["key"]}": "{entry["key"]}",')
     lines.extend(["} as const;", "", "export type PermissionKey = keyof typeof PERMISSIONS;", "export type PermissionValue = (typeof PERMISSIONS)[PermissionKey];", ""])
-    types = """// GENERATED — DO NOT EDIT. Source: superadmin/apps/common/permissions_catalog.yaml\n\nexport type PermissionScope = \"own\" | \"all\";\nexport type PermissionGrant = boolean | PermissionScope;\n"""
+    types = """// GENERATED — DO NOT EDIT. Source: superadmin/apps/common/permissions_catalog.yaml
+
+export type PermissionScope = \"own\" | \"all\";
+export type PermissionGrant = boolean | PermissionScope;
+"""
     return "\n".join(lines), types
+
+
+def sepratecrm_typescript_output(catalog: dict) -> str:
+    """Single-file TypeScript constants for the separate CRM React frontend."""
+    active = [entry for entry in catalog["entries"] if entry["status"] in {"active", "ui_only"}]
+    lines = [
+        "// GENERATED — DO NOT EDIT. Source: superadmin/apps/common/permissions_catalog.yaml",
+        "",
+        "export const PERMISSIONS = {",
+    ]
+    for entry in active:
+        lines.append(f'  "{entry["key"]}": "{entry["key"]}",')
+    lines.extend([
+        "} as const;",
+        "",
+        "export type PermissionKey = keyof typeof PERMISSIONS;",
+        "export type PermissionValue = (typeof PERMISSIONS)[PermissionKey];",
+        "",
+        'export type PermissionScope = "own" | "all";',
+        "export type PermissionGrant = boolean | PermissionScope;",
+        "",
+    ])
+    return "\n".join(lines)
 
 
 def render(catalog: dict) -> dict[Path, str]:
     py = python_output(catalog)
     ts, types = typescript_outputs(catalog)
-    return {OUTPUTS[0]: py, OUTPUTS[1]: py, OUTPUTS[2]: ts, OUTPUTS[3]: types}
+    return {
+        SUPERADMIN_OUTPUT: py,
+        DGHMS_OUTPUT: py,
+        DIGICRM_OUTPUT: digicrm_python_output(catalog),
+        CELIYOHMS_PERMISSIONS_OUTPUT: ts,
+        CELIYOHMS_TYPES_OUTPUT: types,
+        SEPRATECRM_OUTPUT: sepratecrm_typescript_output(catalog),
+    }
 
 
 def main() -> int:

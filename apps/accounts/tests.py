@@ -98,3 +98,134 @@ class RoleTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('crm', response.data)
         self.assertIn('whatsapp', response.data)
+
+
+class UserImportTenantTest(APITestCase):
+    """P0 regression: import_users duplicate check must be scoped per tenant."""
+
+    def setUp(self):
+        self.tenant_a = Tenant.objects.create(
+            name='Tenant A',
+            slug='tenant-a',
+            enabled_modules=['crm'],
+        )
+        self.tenant_b = Tenant.objects.create(
+            name='Tenant B',
+            slug='tenant-b',
+            enabled_modules=['crm'],
+        )
+
+        self.admin_role_a = Role.objects.create(
+            tenant=self.tenant_a,
+            name='Admin',
+            description='Full access',
+            permissions={'admin': {'full_access': True}},
+        )
+        self.admin_user_a = CustomUser.objects.create_user(
+            email='admin_a@example.com',
+            password='TestPass123!',
+            tenant=self.tenant_a,
+        )
+        self.admin_user_a.roles.add(self.admin_role_a)
+
+        self.superuser = CustomUser.objects.create_superuser(
+            email='super@example.com',
+            password='TestPass123!',
+        )
+
+    def _build_xlsx(self, rows):
+        """Return an in-memory Excel file with the given rows."""
+        import io
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        for row in rows:
+            ws.append(row)
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def test_same_email_in_different_tenant_is_allowed(self):
+        """An email used in tenant B must not block import into tenant A."""
+        CustomUser.objects.create_user(
+            email='shared@example.com',
+            password='TestPass123!',
+            tenant=self.tenant_b,
+        )
+
+        self.client.force_authenticate(user=self.admin_user_a)
+        file_data = self._build_xlsx([
+            ['Email', 'First Name', 'Last Name', 'Phone', 'Timezone', 'Password'],
+            ['shared@example.com', 'Shared', 'User', '9999999999', 'UTC', 'TestPass123!'],
+        ])
+        response = self.client.post(
+            '/api/users/import_users/',
+            {'file': file_data},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['created'], 1)
+        self.assertEqual(response.data['skipped'], 0)
+
+    def test_same_email_in_same_tenant_is_skipped(self):
+        """Importing the same email into the same tenant twice should skip it."""
+        CustomUser.objects.create_user(
+            email='duplicate@example.com',
+            password='TestPass123!',
+            tenant=self.tenant_a,
+        )
+
+        self.client.force_authenticate(user=self.admin_user_a)
+        file_data = self._build_xlsx([
+            ['Email', 'First Name', 'Last Name', 'Phone', 'Timezone', 'Password'],
+            ['duplicate@example.com', 'Dup', 'User', '9999999999', 'UTC', 'TestPass123!'],
+        ])
+        response = self.client.post(
+            '/api/users/import_users/',
+            {'file': file_data},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['created'], 0)
+        self.assertEqual(response.data['skipped'], 1)
+
+    def test_super_admin_import_requires_tenant_id(self):
+        """Super-admin imports must explicitly name a target tenant."""
+        self.client.force_authenticate(user=self.superuser)
+        file_data = self._build_xlsx([
+            ['Email', 'First Name', 'Last Name', 'Phone', 'Timezone', 'Password'],
+            ['new@example.com', 'New', 'User', '9999999999', 'UTC', 'TestPass123!'],
+        ])
+        response = self.client.post(
+            '/api/users/import_users/',
+            {'file': file_data},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('tenant_id', response.data['error'].lower())
+
+    def test_super_admin_import_with_tenant_id_succeeds(self):
+        """Super-admin imports scoped to the provided tenant_id."""
+        self.client.force_authenticate(user=self.superuser)
+        file_data = self._build_xlsx([
+            ['Email', 'First Name', 'Last Name', 'Phone', 'Timezone', 'Password'],
+            ['supernew@example.com', 'New', 'User', '9999999999', 'UTC', 'TestPass123!'],
+        ])
+        response = self.client.post(
+            f'/api/users/import_users/?tenant_id={self.tenant_a.id}',
+            {'file': file_data},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['created'], 1)
+        self.assertTrue(
+            CustomUser.objects.filter(
+                email='supernew@example.com',
+                tenant=self.tenant_a,
+            ).exists()
+        )

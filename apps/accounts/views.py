@@ -369,13 +369,32 @@ class UserViewSet(viewsets.ModelViewSet):
         created, skipped, errors = 0, 0, []
         tenant = request.user.tenant if not request.user.is_super_admin else None
 
+        # Super-admin imports must explicitly name the target tenant so the
+        # duplicate check can be scoped per-tenant instead of globally.
+        if request.user.is_super_admin:
+            tenant_id_param = request.query_params.get('tenant_id')
+            if not tenant_id_param:
+                return Response(
+                    {'error': 'Super-admin user imports require a tenant_id query parameter.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            from uuid import UUID
+            from apps.tenants.models import Tenant
+            try:
+                tenant = Tenant.objects.get(id=UUID(str(tenant_id_param)))
+            except (ValueError, TypeError, Tenant.DoesNotExist):
+                return Response(
+                    {'error': f'Invalid tenant_id: {tenant_id_param}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         for row_num, row in enumerate(rows[1:], start=2):
             email = get(row, 'email')
             if not email:
                 errors.append({'row': row_num, 'error': 'Missing email'})
                 continue
 
-            if CustomUser.objects.filter(email=email).exists():
+            if CustomUser.objects.filter(email=email, tenant=tenant).exists():
                 skipped += 1
                 continue
 
