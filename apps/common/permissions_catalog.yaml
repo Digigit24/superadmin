@@ -115,6 +115,21 @@ entries:
   - {key: billing.create, label: "Legacy billing create", module: legacy, resource: billing, action: create, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: hms.payments.create}
   - {key: settings.manage, label: "Legacy settings manage", module: legacy, resource: settings, action: manage, allowed_values: [boolean], scope_model: none, status: deprecated, enforced_by: ["none"], alias_of: admin.settings.edit}
 
+# Who enforces each module's keys at runtime. Read by generate_permissions.py
+# when it expands `resource_actions`. This exists so a module can be enforced by
+# something other than HMSPermission — without it, the CRM-side modules below
+# could not be expressed in this file at all, which is exactly why their 84 keys
+# lived only in the generated artifacts and could not be regenerated.
+enforced_by_by_module:
+  admin: ["superadmin.apps.common.permissions.IsTenantAdmin"]
+  hms: ["dghms.common.drf_auth.HMSPermission"]
+  crm: ["digicrm.common.permissions.HasDigiPermission"]
+  whatsapp: ["digicrm.common.permissions.HasDigiPermission"]
+  integrations: ["digicrm.common.permissions.HasDigiPermission"]
+  telephony: ["digicrm.common.permissions.HasDigiPermission"]
+  meetings: ["digicrm.common.permissions.HasDigiPermission"]
+  tasks: ["digicrm.common.permissions.HasDigiPermission"]
+
 # Declarative active entries expand to full catalog entries with the defaults above.
 resource_actions:
   admin:
@@ -135,3 +150,38 @@ resource_actions:
     orders: {view: scope, create: boolean, edit: scope, delete: boolean, pay: scope, refund: scope}
     panchakarma: {view: scope, create: boolean, edit: scope, delete: boolean}
     webhooks: {view: scope, create: boolean, edit: scope, delete: boolean}
+
+  # ── CRM-side modules ─────────────────────────────────────────────────────
+  # Migrated here from the generated artifacts, where they had been written by
+  # hand outside this catalog. Every value below was read off the existing
+  # entries rather than chosen: the labels, `sensitive` flags and scope models
+  # the declarative expansion produces already matched those files exactly, so
+  # regenerating reproduces them byte for byte.
+  crm:
+    leads: {view: scope, create: boolean, edit: scope, delete: boolean, export: scope}
+    activities: {view: scope, create: boolean, edit: scope, delete: boolean}
+    statuses: {view: scope, create: boolean, edit: scope, delete: boolean}
+    tasks: {view: scope, create: boolean, edit: scope, delete: scope, assign: boolean}
+    meetings: {view: scope, create: boolean, edit: scope, delete: boolean, cancel: scope}
+    payments: {view: scope, create: boolean, edit: scope, delete: boolean}
+    settings: {view: scope, edit: scope}
+  whatsapp:
+    messages: {send: boolean, view: boolean, create: boolean, edit: boolean, delete: boolean}
+    templates: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    campaigns: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    sequences: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    settings: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+  integrations:
+    providers: {view: boolean}
+    connections: {view: scope, create: boolean, edit: scope, delete: boolean}
+    workflows: {view: scope, create: boolean, edit: scope, delete: boolean}
+  telephony:
+    calls: {view: scope, create: boolean, edit: scope, delete: boolean}
+    sms: {view: scope, create: boolean}
+    agents: {view: scope, create: boolean, edit: scope, delete: boolean}
+    callbacks: {view: scope}
+    settings: {view: scope, create: boolean, edit: scope, delete: boolean}
+  meetings:
+    meetings: {view: scope, create: boolean, edit: scope, delete: scope, cancel: scope}
+  tasks:
+    tasks: {view: scope, create: boolean, edit: scope, delete: scope, assign: boolean}

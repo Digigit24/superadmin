@@ -42,6 +42,28 @@ _PY_KEY = re.compile(r"'key': '([^']+)'")
 _TS_KEY = re.compile(r'"([a-z_]+(?:\.[a-z_]+)+)":')
 
 
+# Fallback for a catalog that predates `enforced_by_by_module`. Every module
+# should be named there; this only keeps an older YAML working.
+_LEGACY_ENFORCED_BY = {"admin": ["superadmin.apps.common.permissions.IsTenantAdmin"]}
+_LEGACY_DEFAULT = ["dghms.common.drf_auth.HMSPermission"]
+
+
+def enforced_by_for(catalog: dict, module: str) -> list[str]:
+    """
+    Who checks this module's keys at runtime.
+
+    Was hardcoded to "IsTenantAdmin for admin, HMSPermission for everything
+    else", which is why the 84 crm/whatsapp/telephony/meetings/tasks keys could
+    not live in this catalog: they are enforced by digicrm's HasDigiPermission
+    and the declarative path had no way to say so. Moving the mapping into the
+    YAML is what makes those modules expressible here at all.
+    """
+    declared = (catalog.get("enforced_by_by_module") or {}).get(module)
+    if declared:
+        return list(declared)
+    return list(_LEGACY_ENFORCED_BY.get(module, _LEGACY_DEFAULT))
+
+
 def load_catalog() -> dict:
     with CATALOG_PATH.open(encoding="utf-8") as catalog_file:
         catalog = yaml.safe_load(catalog_file)
@@ -65,7 +87,7 @@ def load_catalog() -> dict:
                     "allowed_values": ["own", "all"] if kind == "scope" else ["boolean"],
                     "scope_model": "own_all" if kind == "scope" else "none",
                     "status": "active",
-                    "enforced_by": (["superadmin.apps.common.permissions.IsTenantAdmin"] if module == "admin" else ["dghms.common.drf_auth.HMSPermission"]),
+                    "enforced_by": enforced_by_for(catalog, module),
                     "sensitive": action == "delete" or (module == "hms" and resource == "payments" and action in {"refund", "reconcile"}),
                 })
     catalog["entries"] = entries

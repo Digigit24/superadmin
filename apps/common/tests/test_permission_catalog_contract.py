@@ -5,13 +5,47 @@ from apps.common.generated_permissions import PERMISSION_CATALOG
 
 
 class PermissionCatalogContractTests(unittest.TestCase):
+    # Modules the catalog is expected to carry. This list used to read
+    # `(admin|hms)`, which quietly encoded "this catalog is HMS-only" — and that
+    # assumption is why nobody noticed the 84 crm/whatsapp/telephony/meetings/
+    # tasks keys living in the GENERATED artifacts but not in their source. They
+    # are in the YAML now, so the assertion says so.
+    CATALOG_MODULES = (
+        "admin", "hms", "crm", "whatsapp", "integrations", "telephony",
+        "meetings", "tasks",
+    )
+
     def test_active_keys_are_flat_and_enforced(self):
+        pattern = r"^(%s)\.[a-z_]+\.[a-z_]+$" % "|".join(self.CATALOG_MODULES)
         for entry in PERMISSION_CATALOG:
             if entry["status"] not in ("active", "ui_only"):
                 continue
-            self.assertRegex(entry["key"], r"^(admin|hms)\.[a-z_]+\.[a-z_]+$")
+            self.assertRegex(entry["key"], pattern)
             self.assertNotIn("team", entry["allowed_values"])
             self.assertNotEqual(entry["enforced_by"], ["none"], entry["key"])
+
+    def test_every_catalog_module_declares_who_enforces_it(self):
+        """
+        A module missing from `enforced_by_by_module` silently falls back to
+        HMSPermission, which for a CRM-side key would be wrong and invisible.
+        """
+        import yaml
+        from pathlib import Path
+
+        # parents[3] is the superadmin root, same as the seed-role test below.
+        catalog_path = (
+            Path(__file__).resolve().parents[3]
+            / "apps" / "common" / "permissions_catalog.yaml"
+        )
+        catalog = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+        declared = set(catalog.get("enforced_by_by_module") or {})
+
+        expanded_modules = set(catalog.get("resource_actions") or {})
+        self.assertEqual(
+            sorted(expanded_modules - declared),
+            [],
+            "these modules expand declaratively but do not say who enforces them",
+        )
 
     def test_deprecated_aliases_have_a_migration_target_or_note(self):
         for entry in PERMISSION_CATALOG:
