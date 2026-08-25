@@ -28,6 +28,45 @@ class TenantViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(tenant)
         return Response(serializer.data)
 
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='whatsapp-credentials',
+        permission_classes=[IsSuperAdmin],
+    )
+    def whatsapp_credentials(self, request, pk=None):
+        """
+        The tenant's WhatsApp vendor credential, for DigiCRM's server-to-server use.
+
+        DigiCRM needs this to call the Laravel WhatsApp gateway on the tenant's
+        behalf. It is stored in `Tenant.settings` by the Admin Settings screen,
+        which is the only self-serve UI for it.
+
+        Deliberately NOT the tenant detail endpoint, even though a super-admin
+        service token could call that: `TenantSerializer` also exposes
+        `database_url`, and a credential lookup has no business handing a
+        database URL to another service. This returns the two fields it needs
+        and nothing else.
+
+        `IsSuperAdmin` because the caller is a service, not a person — the same
+        shared service token DigiCRM already uses for the user directory. A
+        tenant admin has no reason to read the raw token back out; the UI they
+        saved it from does not need to.
+        """
+        tenant = self.get_object()
+        settings_blob = tenant.settings if isinstance(tenant.settings, dict) else {}
+        vendor_uid = (settings_blob.get('whatsapp_vendor_uid') or '').strip()
+        api_token = (settings_blob.get('whatsapp_api_token') or '').strip()
+
+        return Response({
+            'tenant_id': str(tenant.id),
+            'vendor_uid': vendor_uid or None,
+            'api_token': api_token or None,
+            # Optional per-tenant gateway override; almost always unset.
+            'base_url': (settings_blob.get('whatsapp_base_url') or '').strip() or None,
+            'configured': bool(vendor_uid and api_token),
+        })
+
     @action(detail=False, methods=['put', 'patch'], permission_classes=[IsTenantAdmin])
     def update_me(self, request):
         tenant = request.user.tenant
