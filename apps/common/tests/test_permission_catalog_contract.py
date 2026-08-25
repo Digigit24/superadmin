@@ -12,11 +12,13 @@ class PermissionCatalogContractTests(unittest.TestCase):
     # are in the YAML now, so the assertion says so.
     CATALOG_MODULES = (
         "admin", "hms", "crm", "whatsapp", "integrations", "telephony",
-        "meetings", "tasks",
+        "meetings", "tasks", "real_estate",
     )
 
     def test_active_keys_are_flat_and_enforced(self):
-        pattern = r"^(%s)\.[a-z_]+\.[a-z_]+$" % "|".join(self.CATALOG_MODULES)
+        # Longest-first so `real_estate` is not shadowed by a shorter prefix.
+        alternation = "|".join(sorted(self.CATALOG_MODULES, key=len, reverse=True))
+        pattern = r"^(%s)\.[a-z_]+\.[a-z_]+$" % alternation
         for entry in PERMISSION_CATALOG:
             if entry["status"] not in ("active", "ui_only"):
                 continue

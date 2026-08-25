@@ -129,6 +129,7 @@ enforced_by_by_module:
   telephony: ["digicrm.common.permissions.HasDigiPermission"]
   meetings: ["digicrm.common.permissions.HasDigiPermission"]
   tasks: ["digicrm.common.permissions.HasDigiPermission"]
+  real_estate: ["digicrm.common.permissions.HasDigiPermission"]
 
 # Declarative active entries expand to full catalog entries with the defaults above.
 resource_actions:
@@ -164,13 +165,15 @@ resource_actions:
     tasks: {view: scope, create: boolean, edit: scope, delete: scope, assign: boolean}
     meetings: {view: scope, create: boolean, edit: scope, delete: boolean, cancel: scope}
     payments: {view: scope, create: boolean, edit: scope, delete: boolean}
-    settings: {view: scope, edit: scope}
+    settings: {view: scope, create: boolean, edit: scope, delete: boolean}
   whatsapp:
     messages: {send: boolean, view: boolean, create: boolean, edit: boolean, delete: boolean}
-    templates: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    templates: {view: boolean, create: boolean, edit: boolean, delete: boolean, send: boolean}
     campaigns: {view: boolean, create: boolean, edit: boolean, delete: boolean}
     sequences: {view: boolean, create: boolean, edit: boolean, delete: boolean}
     settings: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    contacts: {view: boolean, create: boolean, edit: boolean, delete: boolean}
+    flows: {view: boolean, create: boolean, edit: boolean, delete: boolean}
   integrations:
     providers: {view: boolean}
     connections: {view: scope, create: boolean, edit: scope, delete: boolean}
@@ -181,7 +184,13 @@ resource_actions:
     agents: {view: scope, create: boolean, edit: scope, delete: boolean}
     callbacks: {view: scope}
     settings: {view: scope, create: boolean, edit: scope, delete: boolean}
+    analytics: {view: scope}
+    campaigns: {view: scope, create: boolean, edit: scope, delete: boolean}
   meetings:
     meetings: {view: scope, create: boolean, edit: scope, delete: scope, cancel: scope}
   tasks:
     tasks: {view: scope, create: boolean, edit: scope, delete: scope, assign: boolean}
+  real_estate:
+    projects: {view: scope, create: boolean, edit: scope, delete: boolean}
+    units: {view: scope, create: boolean, edit: scope, delete: boolean}
+    leads: {view: scope, create: boolean, edit: scope, delete: boolean}

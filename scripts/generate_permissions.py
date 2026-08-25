@@ -28,7 +28,16 @@ OUTPUTS = (
     ROOT / "dghms" / "common" / "generated_permissions.py",
     ROOT / "celiyohms" / "src" / "constants" / "permissions.ts",
     ROOT / "celiyohms" / "src" / "constants" / "permission-types.ts",
+    # digicrm was hand-maintained for as long as this catalog could not express
+    # its keys. Now that it can, this file is generated like the rest — it just
+    # carries one extra artifact, the CRMPermissions constants class.
+    ROOT / "digicrm" / "common" / "generated_permissions.py",
 )
+
+# Modules whose keys digicrm's CRMPermissions class does NOT carry: it is the
+# CRM-side constant set, and digicrm has no use for hospital or tenant-admin
+# keys even though it holds the whole catalog.
+CRM_PERMISSIONS_EXCLUDED_MODULES = {"hms", "admin"}
 REQUIRED_ENTRY_FIELDS = {
     "key", "label", "module", "resource", "action", "allowed_values",
     "scope_model", "status", "enforced_by",
@@ -115,6 +124,31 @@ def load_catalog() -> dict:
     return catalog
 
 
+def crm_permissions_class(catalog: dict) -> str:
+    """
+    digicrm's `CRMPermissions`, the one artifact the other Python outputs do not
+    carry. Purely derived: the constant name is the key upper-cased with dots as
+    underscores, over the active non-HMS/admin keys in catalog order. Verified
+    to reproduce the hand-written class exactly — same set, same order, same
+    names — before this file was ever generated.
+    """
+    keys = [
+        entry["key"]
+        for entry in catalog["entries"]
+        if entry["status"] in {"active", "ui_only"}
+        and entry["module"] not in CRM_PERMISSIONS_EXCLUDED_MODULES
+    ]
+    lines = [
+        "",
+        "",
+        "class CRMPermissions:",
+        '    """Canonical CRM permission keys generated from the SuperAdmin catalog."""',
+        "",
+    ]
+    lines += [f'    {key.upper().replace(".", "_")} = "{key}"' for key in keys]
+    return "\n".join(lines) + "\n"
+
+
 def python_output(catalog: dict) -> str:
     entries = catalog["entries"]
     active = [entry for entry in entries if entry["status"] in {"active", "ui_only"}]
@@ -167,7 +201,16 @@ def keys_that_would_be_lost(expected: dict[Path, str]) -> dict[Path, list[str]]:
 def render(catalog: dict) -> dict[Path, str]:
     py = python_output(catalog)
     ts, types = typescript_outputs(catalog)
-    return {OUTPUTS[0]: py, OUTPUTS[1]: py, OUTPUTS[2]: ts, OUTPUTS[3]: types}
+    return {
+        OUTPUTS[0]: py,
+        OUTPUTS[1]: py,
+        OUTPUTS[2]: ts,
+        OUTPUTS[3]: types,
+        # Same catalog, plus the constants class only digicrm consumes. Kept out
+        # of the shared `py` so superadmin and dghms do not silently grow a class
+        # they have no use for.
+        OUTPUTS[4]: py + crm_permissions_class(catalog),
+    }
 
 
 def main() -> int:
