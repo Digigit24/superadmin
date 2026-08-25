@@ -240,9 +240,14 @@ PERMISSION_SCHEMA = {
             },
             "settings": {
                 "label": "CRM Settings",
+                # LeadFieldConfigurationViewSet is a full ModelViewSet, so
+                # create and destroy are routed and enforced — they were simply
+                # never offered here.
                 "actions": {
                     "view": {"type": "scope", "options": ["own", "team", "all"]},
-                    "edit": {"type": "scope", "options": ["own", "team", "all"]}
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
                 }
             }
         }
@@ -318,6 +323,18 @@ PERMISSION_SCHEMA = {
                     "edit": {"type": "boolean"},
                     "delete": {"type": "boolean"}
                 }
+            },
+            "flows": {
+                "label": "Flows",
+                # WhatsAppFlowsProxyView (GET/POST), FlowDetailProxyView
+                # (GET/PUT/PATCH/DELETE), FlowActionProxyView (POST, mapped to
+                # edit) and FlowStatsProxyView (GET, mapped to view).
+                "actions": {
+                    "view": {"type": "boolean"},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "boolean"},
+                    "delete": {"type": "boolean"}
+                }
             }
         }
     },
@@ -348,9 +365,62 @@ PERMISSION_SCHEMA = {
             }
         }
     },
+    "real_estate": {
+        "label": "Real Estate",
+        # Every viewset here is a plain ModelViewSet (ProjectViewSet,
+        # BlockViewSet -> projects; UnitViewSet -> units; ProjectInterestViewSet
+        # and UnitLeadViewSet -> leads), so all four actions are routed. The
+        # module had no entry at all, which is why none of it was grantable.
+        "resources": {
+            "projects": {
+                "label": "Projects",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "units": {
+                "label": "Units",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
+            "leads": {
+                "label": "Property Leads",
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            }
+        }
+    },
     "telephony": {
         "label": "Telephony",
         "resources": {
+            "analytics": {
+                "label": "Analytics",
+                # AnalyticsDashboardView and AgentDailyStatsView, both GET-only.
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]}
+                }
+            },
+            "campaigns": {
+                "label": "Campaigns",
+                # CampaignViewSet: ModelViewSet limited to get/post/patch/delete.
+                "actions": {
+                    "view": {"type": "scope", "options": ["own", "team", "all"]},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "scope", "options": ["own", "team", "all"]},
+                    "delete": {"type": "boolean"}
+                }
+            },
             "calls": {
                 "label": "Calls",
                 "actions": {
