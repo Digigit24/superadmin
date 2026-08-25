@@ -4,12 +4,17 @@
 Run from any directory:
     python superadmin/scripts/generate_permissions.py
     python superadmin/scripts/generate_permissions.py --check
+    python superadmin/scripts/generate_permissions.py --allow-shrink
+
+Writing REFUSES by default if it would remove permission keys from any output.
+See `keys_that_would_be_lost`.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import pprint
+import re
 import sys
 from pathlib import Path
 
@@ -29,6 +34,12 @@ REQUIRED_ENTRY_FIELDS = {
     "scope_model", "status", "enforced_by",
 }
 VALID_STATUSES = {"active", "ui_only", "deprecated"}
+
+# A dotted permission key as it appears in each artifact:
+#   Python  ->  'key': 'whatsapp.contacts.view',
+#   TS      ->  "whatsapp.contacts.view": "whatsapp.contacts.view",
+_PY_KEY = re.compile(r"'key': '([^']+)'")
+_TS_KEY = re.compile(r'"([a-z_]+(?:\.[a-z_]+)+)":')
 
 
 def load_catalog() -> dict:
@@ -100,6 +111,37 @@ def typescript_outputs(catalog: dict) -> tuple[str, str]:
     return "\n".join(lines), types
 
 
+def extract_keys(path: Path, text: str) -> set[str]:
+    """Every permission key present in one artifact's text."""
+    pattern = _TS_KEY if path.suffix == ".ts" else _PY_KEY
+    return set(pattern.findall(text))
+
+
+def keys_that_would_be_lost(expected: dict[Path, str]) -> dict[Path, list[str]]:
+    """
+    Per output: which keys exist on disk now and would NOT survive a write.
+
+    This exists because the catalog is not, in practice, the only source of the
+    keys in these files. dghms/common/generated_permissions.py and
+    celiyohms/src/constants/permissions.ts each carry 84 crm/whatsapp/telephony/
+    meetings/tasks keys that this YAML has never contained and cannot produce —
+    they were added by hand. Regenerating would therefore DELETE those 84 keys
+    and add nothing, silently, from a command that reads as routine.
+
+    Per file rather than in aggregate: one output gaining keys must never mask
+    another losing them.
+    """
+    losses: dict[Path, list[str]] = {}
+    for path, contents in expected.items():
+        if not path.exists():
+            continue
+        current = extract_keys(path, path.read_text(encoding="utf-8"))
+        lost = current - extract_keys(path, contents)
+        if lost:
+            losses[path] = sorted(lost)
+    return losses
+
+
 def render(catalog: dict) -> dict[Path, str]:
     py = python_output(catalog)
     ts, types = typescript_outputs(catalog)
@@ -109,6 +151,11 @@ def render(catalog: dict) -> dict[Path, str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail if generated files are stale")
+    parser.add_argument(
+        "--allow-shrink",
+        action="store_true",
+        help="write even if it removes permission keys from an output (destructive)",
+    )
     args = parser.parse_args()
     expected = render(load_catalog())
     stale = [path for path, contents in expected.items() if not path.exists() or path.read_text(encoding="utf-8") != contents]
@@ -118,6 +165,28 @@ def main() -> int:
             return 1
         print("Permission artifacts are up to date.")
         return 0
+
+    # Deliberately AFTER the --check early return: --check is a read-only
+    # staleness diagnostic and must keep answering that question truthfully
+    # whether or not a write would be refused. The two are independent.
+    losses = keys_that_would_be_lost(expected)
+    if losses and not args.allow_shrink:
+        print("Refusing to write: this would REMOVE permission keys.", file=sys.stderr)
+        for path, lost in losses.items():
+            modules = sorted({key.split(".")[0] for key in lost})
+            print(f"  {path.relative_to(ROOT)}: {len(lost)} keys ({', '.join(modules)})", file=sys.stderr)
+            for key in lost[:10]:
+                print(f"      {key}", file=sys.stderr)
+            if len(lost) > 10:
+                print(f"      ... and {len(lost) - 10} more", file=sys.stderr)
+        print(
+            "\nThose keys are not in the catalog, so regenerating cannot reproduce them.\n"
+            "Add them to permissions_catalog.yaml first, or pass --allow-shrink if you\n"
+            "genuinely mean to delete them.",
+            file=sys.stderr,
+        )
+        return 1
+
     for path, contents in expected.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(contents, encoding="utf-8")
