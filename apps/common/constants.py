@@ -266,6 +266,29 @@ PERMISSION_SCHEMA = {
                     "view": {"type": "boolean"},
                     "create": {"type": "boolean"},
                     "edit": {"type": "boolean"},
+                    "delete": {"type": "boolean"},
+                    # Enforced by WhatsAppTemplateSendProxyView and
+                    # WhatsAppTemplateBulkSendProxyView
+                    # (permission_action='send'). Distinct from
+                    # whatsapp.messages.send, which is a different resource and
+                    # a different view — one sends a free-form reply inside the
+                    # 24-hour window, this one sends an approved template and is
+                    # the only way to open a conversation outside it.
+                    "send": {"type": "boolean"}
+                }
+            },
+            "contacts": {
+                "label": "Contacts",
+                # Enforced by the contacts, contact-group and label proxy views
+                # in digicrm/whatsapp_integration/views.py, all of which declare
+                # permission_resource='contacts'. Every action here is reachable:
+                # view (GET list/detail, import status), create (POST create,
+                # POST import), edit (PUT/PATCH detail, add/remove group
+                # members), delete (DELETE detail).
+                "actions": {
+                    "view": {"type": "boolean"},
+                    "create": {"type": "boolean"},
+                    "edit": {"type": "boolean"},
                     "delete": {"type": "boolean"}
                 }
             },
