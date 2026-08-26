@@ -162,6 +162,35 @@ class IsSuperAdmin(BasePermission):
         return request.user and request.user.is_authenticated and request.user.is_super_admin
 
 
+class IsSuperAdminOrOwnTenant(BasePermission):
+    """
+    A platform super-admin (any tenant), OR a regular authenticated user
+    acting on their OWN tenant only.
+
+    "Own tenant" means the URL's `pk`/`id` kwarg matches the caller's
+    JWT-verified `tenant_id` — never a header, query param, or anything else
+    client-suppliable. A user whose own tenant differs from the URL, or who
+    has no tenant at all, is refused; this never grants access to another
+    tenant's resource.
+
+    Built for server-to-server callers (e.g. DigiCRM) that forward the
+    *caller's own* already-verified JWT instead of a separately-configured
+    static service credential — self-service, auto-scoped, and needs no
+    standing secret to rotate.
+    """
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if getattr(user, 'is_super_admin', False):
+            return True
+        tenant_id = getattr(user, 'tenant_id', None)
+        if not tenant_id:
+            return False
+        target = view.kwargs.get('pk')
+        return target is not None and str(tenant_id) == str(target)
+
+
 class IsTenantAdmin(BasePermission):
     """
     Permission class for tenant admins.

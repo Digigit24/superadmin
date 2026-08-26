@@ -8,7 +8,7 @@ from apps.tenants.serializers import (
     TenantImageSerializer,
     TenantImageCreateSerializer
 )
-from apps.common.permissions import IsSuperAdmin, IsTenantAdmin
+from apps.common.permissions import IsSuperAdmin, IsSuperAdminOrOwnTenant, IsTenantAdmin
 
 
 class TenantViewSet(viewsets.ModelViewSet):
@@ -16,8 +16,20 @@ class TenantViewSet(viewsets.ModelViewSet):
     serializer_class = TenantSerializer
 
     def get_permissions(self):
+        # NOTE: this override shadows the `permission_classes` kwarg on any
+        # individual `@action` below — DRF only consults that kwarg via the
+        # DEFAULT `get_permissions()`, which this class replaces. Every
+        # action needing something other than `IsSuperAdmin` must be listed
+        # here explicitly, or its `@action(permission_classes=[...])` is
+        # silently dead code. Confirmed the hard way: `whatsapp_credentials`
+        # briefly declared `IsSuperAdminOrOwnTenant` on the action itself
+        # while this method still fell through to `IsSuperAdmin` — every
+        # regular tenant user got a 403 despite the "own tenant" class
+        # working correctly in isolation.
         if self.action in ['me', 'update_me']:
             return [IsTenantAdmin()]
+        if self.action == 'whatsapp_credentials':
+            return [IsSuperAdminOrOwnTenant()]
         return [IsSuperAdmin()]
 
     @action(detail=False, methods=['get'], permission_classes=[IsTenantAdmin])
@@ -32,7 +44,7 @@ class TenantViewSet(viewsets.ModelViewSet):
         detail=True,
         methods=['get'],
         url_path='whatsapp-credentials',
-        permission_classes=[IsSuperAdmin],
+        permission_classes=[IsSuperAdminOrOwnTenant],
     )
     def whatsapp_credentials(self, request, pk=None):
         """
@@ -48,10 +60,16 @@ class TenantViewSet(viewsets.ModelViewSet):
         database URL to another service. This returns the two fields it needs
         and nothing else.
 
-        `IsSuperAdmin` because the caller is a service, not a person — the same
-        shared service token DigiCRM already uses for the user directory. A
-        tenant admin has no reason to read the raw token back out; the UI they
-        saved it from does not need to.
+        `IsSuperAdminOrOwnTenant`, not `IsSuperAdmin` alone: DigiCRM calls this
+        by forwarding the CALLER'S OWN already-verified JWT (the logged-in
+        tenant user's token, from the incoming request it's handling) rather
+        than a separately-minted, manually-rotated static service credential.
+        That means the caller is almost always a regular tenant user, not a
+        super-admin — so the permission has to allow "this token's own tenant,
+        and only its own tenant" as well as genuine super-admins. `pk` in the
+        URL is checked against the JWT's `tenant_id` claim in
+        `IsSuperAdminOrOwnTenant` itself; a tenant can never reach another
+        tenant's credential this way.
         """
         tenant = self.get_object()
         settings_blob = tenant.settings if isinstance(tenant.settings, dict) else {}
