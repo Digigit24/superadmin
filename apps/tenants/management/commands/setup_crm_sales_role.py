@@ -70,6 +70,19 @@ SALES_EXECUTIVE_PERMISSIONS = {
             "create": False,
             "edit": False,
             "delete": False,
+            "send": False,
+        },
+        "contacts": {
+            "view": True,
+            "create": True,
+            "edit": False,
+            "delete": False,
+        },
+        "flows": {
+            "view": False,
+            "create": False,
+            "edit": False,
+            "delete": False,
         },
         "campaigns": {
             "view": False,
